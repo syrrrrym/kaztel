@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Реестр поручений Совета директоров</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --paper:#EEF0EC; --paper-raised:#F7F8F5; --ink:#16213C; --ink-soft:#4A5674;
+    --line:#D8D4C6; --gold:#B08D2B; --done:#2F6B4F; --done-soft:#DCEAE1;
+    --overdue:#9C3B2E; --overdue-soft:#F3DCD6; --progress:#B08D2B; --progress-soft:#F1E8CE;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  button{font-family:inherit;cursor:pointer;} input,select{font-family:inherit;}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  #login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .login-card{background:var(--paper-raised);border:1px solid var(--line);max-width:420px;width:100%;padding:40px 36px;position:relative;}
+  .login-card::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--gold),var(--ink));}
+  .login-emblem{width:52px;height:52px;border:2px solid var(--ink);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:20px;}
+  .login-emblem span{font-family:'IBM Plex Serif',serif;font-weight:700;font-size:20px;}
+  .login-card h1{font-family:'IBM Plex Serif',serif;font-size:22px;margin:0 0 6px;line-height:1.3;}
+  .login-card p.sub{color:var(--ink-soft);font-size:13.5px;margin:0 0 28px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:6px;}
+  .field input,.field select{width:100%;padding:11px 12px;border:1px solid var(--line);background:#fff;font-size:14.5px;}
+  .btn-primary{width:100%;padding:12px;background:var(--ink);color:#fff;border:none;font-size:14.5px;font-weight:600;}
+  .btn-primary:disabled{opacity:.6;}
+  .login-error{color:var(--overdue);font-size:13px;margin-top:10px;min-height:16px;}
+  #app{display:none;min-height:100vh;}
+  header.masthead{background:var(--ink);color:#fff;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+  .masthead-left{display:flex;align-items:center;gap:14px;}
+  .emblem-small{width:36px;height:36px;border:1.5px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;}
+  .emblem-small span{font-family:'IBM Plex Serif',serif;font-weight:700;color:var(--gold);font-size:14px;}
+  .masthead h1{font-family:'IBM Plex Serif',serif;font-size:17px;margin:0;font-weight:600;}
+  .masthead .eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#9AA6C4;margin:0 0 2px;}
+  .masthead-right{display:flex;align-items:center;gap:14px;}
+  .role-badge{font-size:10.5px;text-transform:uppercase;padding:3px 8px;border:1px solid var(--gold);color:var(--gold);border-radius:2px;}
+  .logout-btn{background:transparent;border:1px solid #3A4568;color:#DDE2EE;padding:7px 14px;font-size:12.5px;}
+  main{max-width:1180px;margin:0 auto;padding:28px 28px 80px;}
+  .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:28px;}
+  .stat{background:var(--paper-raised);padding:18px 20px;}
+  .stat .n{font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;}
+  .stat .l{font-size:12px;color:var(--ink-soft);margin-top:8px;}
+  .stat.overdue .n{color:var(--overdue);} .stat.done .n{color:var(--done);}
+  .toolbar{display:flex;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+  .toolbar-left{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .chip-toggle{border:1px solid var(--line);background:var(--paper-raised);padding:7px 14px;font-size:12.5px;color:var(--ink-soft);}
+  .chip-toggle.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .search-input{border:1px solid var(--line);background:var(--paper-raised);padding:8px 12px;font-size:13px;width:220px;}
+  .tab-btn{border:none;background:transparent;padding:8px 4px;font-size:13px;color:var(--ink-soft);border-bottom:2px solid transparent;margin-right:22px;}
+  .tab-btn.active{color:var(--ink);border-bottom-color:var(--gold);font-weight:600;}
+  .tabs-row{margin-bottom:20px;border-bottom:1px solid var(--line);}
+  .order{background:var(--paper-raised);border:1px solid var(--line);margin-bottom:14px;}
+  .order-head{display:flex;align-items:center;gap:18px;padding:18px 20px;cursor:pointer;}
+  .seal{width:54px;height:54px;border-radius:50%;border:2px solid var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;}
+  .seal .pct{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px;}
+  .seal .pctlabel{font-size:8px;color:var(--ink-soft);}
+  .seal.done{border-color:var(--done);} .seal.done .pct{color:var(--done);}
+  .seal.overdue{border-color:var(--overdue);} .seal.overdue .pct{color:var(--overdue);}
+  .seal.progress .pct{color:var(--progress);}
+  .order-head-main{flex:1;min-width:0;}
+  .order-num{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--gold);}
+  .order-title{font-family:'IBM Plex Serif',serif;font-size:15.5px;margin:3px 0 6px;font-weight:600;}
+  .order-meta{font-size:12px;color:var(--ink-soft);display:flex;gap:14px;flex-wrap:wrap;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;text-transform:uppercase;padding:3px 9px;border-radius:2px;font-weight:600;}
+  .badge.overdue{background:var(--overdue-soft);color:var(--overdue);}
+  .badge.done{background:var(--done-soft);color:var(--done);}
+  .badge.progress{background:var(--progress-soft);color:var(--progress);}
+  .chevron{font-size:18px;color:var(--ink-soft);transition:transform .15s;}
+  .order.open .chevron{transform:rotate(90deg);}
+  .order-body{display:none;border-top:1px solid var(--line);padding:4px 20px 18px;}
+  .order.open .order-body{display:block;}
+  .item{display:grid;grid-template-columns:1fr 140px 110px 150px;gap:14px;align-items:center;padding:14px 0;border-bottom:1px dashed var(--line);}
+  .item:last-child{border-bottom:none;}
+  .item-text{font-size:13.5px;line-height:1.4;}
+  .item-sub{font-size:11.5px;color:var(--ink-soft);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .stale-flag{color:var(--overdue);font-size:11px;}
+  .bar-wrap{background:#E3E0D4;height:7px;border-radius:4px;overflow:hidden;}
+  .bar-fill{height:100%;background:var(--progress);}
+  .bar-fill.done{background:var(--done);} .bar-fill.overdue{background:var(--overdue);}
+  .bar-pct{font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin-top:4px;color:var(--ink-soft);}
+  .item-deadline{font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
+  .item-edit{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .item-edit input{width:56px;padding:6px;border:1px solid var(--line);font-size:12.5px;font-family:'IBM Plex Mono',monospace;}
+  .item-edit button{padding:6px 10px;font-size:11.5px;background:var(--ink);color:#fff;border:none;}
+  .locked-note{font-size:11px;color:var(--ink-soft);font-style:italic;}
+  .history-list{background:var(--paper-raised);border:1px solid var(--line);}
+  .h-entry{display:flex;gap:14px;padding:13px 18px;border-bottom:1px solid var(--line);font-size:12.5px;align-items:baseline;}
+  .h-entry:last-child{border-bottom:none;}
+  .h-date{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);white-space:nowrap;width:130px;flex-shrink:0;}
+  .h-user{font-weight:600;white-space:nowrap;width:170px;flex-shrink:0;}
+  .h-change{color:var(--ink-soft);} .h-change b{color:var(--ink);font-family:'IBM Plex Mono',monospace;}
+  .empty-note{padding:40px 20px;text-align:center;color:var(--ink-soft);font-size:13.5px;}
+  section.title-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+  section.title-row h2{font-family:'IBM Plex Serif',serif;font-size:17px;margin:0;}
+  section.title-row .count{font-size:12px;color:var(--ink-soft);}
+  /* --- admin controls --- */
+  .btn-secondary{padding:9px 14px;background:var(--paper-raised);border:1px solid var(--line);font-size:12.5px;color:var(--ink);}
+  .btn-danger{padding:9px 14px;background:transparent;border:1px solid var(--overdue);color:var(--overdue);font-size:12.5px;}
+  .btn-secondary.small,.btn-danger.small{padding:6px 10px;font-size:11px;}
+  .admin-row{display:flex;gap:8px;justify-content:flex-end;padding:14px 0 2px;}
+  .item-delete{background:transparent;border:none;color:var(--overdue);font-size:16px;padding:4px 6px;line-height:1;}
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(22,33,60,.55);align-items:center;justify-content:center;padding:20px;z-index:60;}
+  .modal-overlay.open{display:flex;}
+  .modal-box{background:var(--paper-raised);border:1px solid var(--line);max-width:440px;width:100%;padding:30px 28px;position:relative;max-height:90vh;overflow:auto;}
+  .modal-box h3{font-family:'IBM Plex Serif',serif;font-size:17px;margin:0 0 20px;}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:8px;}
+  .modal-error{color:var(--overdue);font-size:12.5px;margin-top:12px;min-height:14px;}
+  .modal-hint{font-size:11.5px;color:var(--ink-soft);margin:-10px 0 16px;}
+  .attachments-block{border-top:1px dashed var(--line);padding:14px 0 4px;margin-top:4px;}
+  .attachments-title{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:8px;}
+  .file-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line);gap:10px;}
+  .file-item:last-of-type{border-bottom:none;}
+  .file-name{font-size:13px;word-break:break-all;}
+  .file-actions{display:flex;gap:6px;align-items:center;flex-shrink:0;}
+  .upload-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;}
+  .upload-row input[type=file]{font-size:12px;max-width:220px;}
+  @media(max-width:720px){
+    .stats-row{grid-template-columns:repeat(2,1fr);}
+    .item{grid-template-columns:1fr;gap:8px;}
+    main{padding:18px 14px 60px;}
+    .h-entry{flex-direction:column;gap:2px;} .h-date{width:auto;} .h-user{width:auto;}
+  }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-emblem"><span>СД</span></div>
+    <h1>Реестр поручений<br>Совета директоров</h1>
+    <p class="sub">Войдите под своей рабочей учётной записью.</p>
+    <div class="field"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username"></div>
+    <div class="field"><label for="login-pass">Пароль</label><input id="login-pass" type="password" autocomplete="current-password"></div>
+    <button class="btn-primary" id="login-btn" onclick="attemptLogin()">Войти</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="masthead">
+    <div class="masthead-left">
+      <div class="emblem-small"><span>СД</span></div>
+      <div><p class="eyebrow">Реестр исполнения</p><h1>Поручения Совета директоров</h1></div>
+    </div>
+    <div class="masthead-right">
+      <div class="user-chip"><span id="user-name-chip"></span> <span class="role-badge" id="user-role-chip"></span></div>
+      <button class="logout-btn" onclick="logout()">Выйти</button>
+    </div>
+  </header>
+  <main>
+    <div class="stats-row" id="stats-row"></div>
+    <div class="tabs-row" id="tabs-row">
+      <button class="tab-btn active" data-tab="orders" onclick="switchTab('orders')">Поручения</button>
+      <button class="tab-btn" data-tab="history" onclick="switchTab('history')">История изменений</button>
+    </div>
+    <div id="tab-orders">
+      <div class="toolbar">
+        <div class="toolbar-left" id="toolbar-left">
+          <button class="chip-toggle active" id="filter-all" onclick="setFilter('all')">Все</button>
+          <button class="chip-toggle" id="filter-overdue" onclick="setFilter('overdue')">Просроченные</button>
+          <button class="chip-toggle" id="filter-progress" onclick="setFilter('progress')">В работе</button>
+          <button class="chip-toggle" id="filter-done" onclick="setFilter('done')">Исполненные</button>
+        </div>
+        <input class="search-input" placeholder="Поиск по названию…" oninput="setSearch(this.value)">
+      </div>
+      <div id="orders-list">Загрузка…</div>
+    </div>
+    <div id="tab-history" style="display:none">
+      <section class="title-row"><h2>История изменений</h2><span class="count" id="history-count"></span></section>
+      <div class="history-list" id="history-list"></div>
+    </div>
+    <div id="tab-users" style="display:none">
+      <section class="title-row"><h2>Пользователи</h2><button class="btn-secondary" onclick="openInviteModal()">+ Пригласить сотрудника</button></section>
+      <div class="history-list" id="users-list"></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this) closeModal()">
+  <div class="modal-box" id="modal-body"></div>
+</div>
+
+<script>
+// ===== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К SUPABASE =====
+const SUPABASE_URL = 'https://khbuercwgwxybsyznvlt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_7vijcv9_z6t86KRvEN6f1g_MSWofqvY';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentProfile = null;
+let profilesById = {};
+let orders = [];
+let history = [];
+let activeFilter = 'all';
+let searchTerm = '';
+
+function fmtDate(iso){ return new Date(iso).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+function fmtDateTime(iso){ const d=new Date(iso); return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function today(){ return new Date(); }
+function daysBetween(a,b){ return Math.round((b-a)/(1000*60*60*24)); }
+function userName(id){ return profilesById[id] ? profilesById[id].full_name : '—'; }
+function isAdmin(){ return !!(currentProfile && currentProfile.role === 'admin'); }
+
+async function attemptLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-pass').value;
+  const err = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; err.textContent = '';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false;
+  if(error){ err.textContent = 'Неверный email или пароль.'; return; }
+  await afterLogin();
+}
+
+async function afterLogin(){
+  const { data: { user } } = await sb.auth.getUser();
+  if(!user) return;
+  const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  currentProfile = profile;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('user-name-chip').textContent = profile.full_name;
+  document.getElementById('user-role-chip').textContent = profile.role === 'admin' ? 'Администратор' : 'Менеджер';
+  setupAdminControls();
+  await loadAll();
+}
+
+function setupAdminControls(){
+  if(!isAdmin()) return;
+  const tabsRow = document.getElementById('tabs-row');
+  if(!tabsRow.querySelector('[data-tab="users"]')){
+    tabsRow.insertAdjacentHTML('beforeend', `<button class="tab-btn" data-tab="users" onclick="switchTab('users')">Пользователи</button>`);
+  }
+  const toolbarLeft = document.getElementById('toolbar-left');
+  if(!document.getElementById('new-order-btn')){
+    toolbarLeft.insertAdjacentHTML('beforeend', `<button class="btn-secondary" id="new-order-btn" onclick="openOrderModal()">+ Новое поручение</button>`);
+  }
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  currentProfile = null;
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-pass').value = '';
+}
+
+// Восстановление сессии при перезагрузке страницы
+sb.auth.onAuthStateChange((event, session) => {
+  if(event === 'SIGNED_IN' && !currentProfile) afterLogin();
+});
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if(session) await afterLogin();
+})();
+
+async function loadAll(){
+  const [{data: profiles}, {data: ordersData}, {data: historyData}] = await Promise.all([
+    sb.from('profiles').select('*'),
+    sb.from('orders').select('*, items(*), attachments(*)').order('id'),
+    sb.from('history').select('*').order('ts', {ascending:false})
+  ]);
+  profilesById = {};
+  (profiles||[]).forEach(p => profilesById[p.id] = p);
+  orders = ordersData || [];
+  history = historyData || [];
+  renderAll();
+}
+
+function itemStatus(item){
+  if(item.progress >= 100) return 'done';
+  if(today() > new Date(item.deadline)) return 'overdue';
+  return 'progress';
+}
+function orderStatus(order){
+  if(!order.items || order.items.length === 0) return 'progress';
+  const st = order.items.map(itemStatus);
+  if(st.includes('overdue')) return 'overdue';
+  if(st.every(s=>s==='done')) return 'done';
+  return 'progress';
+}
+function orderProgress(order){
+  if(!order.items || order.items.length === 0) return 0;
+  return Math.round(order.items.reduce((s,i)=>s+i.progress,0)/order.items.length);
+}
+function isStale(item){ return daysBetween(new Date(item.last_at), today()) > 7; }
+function canEdit(item, order){
+  if(!currentProfile) return false;
+  if(currentProfile.role === 'admin') return true;
+  return currentProfile.id === order.responsible;
+}
+
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.getElementById('tab-orders').style.display = tab==='orders' ? 'block':'none';
+  document.getElementById('tab-history').style.display = tab==='history' ? 'block':'none';
+  const usersTab = document.getElementById('tab-users');
+  if(usersTab) usersTab.style.display = tab==='users' ? 'block':'none';
+  if(tab==='history') renderHistory();
+  if(tab==='users') renderUsers();
+}
+function setFilter(f){
+  activeFilter = f;
+  ['all','overdue','progress','done'].forEach(k=>document.getElementById('filter-'+k).classList.toggle('active', k===f));
+  renderOrders();
+}
+function setSearch(v){ searchTerm = v.toLowerCase(); renderOrders(); }
+
+function renderStats(){
+  const total = orders.length;
+  const done = orders.filter(o=>orderStatus(o)==='done').length;
+  const overdue = orders.filter(o=>orderStatus(o)==='overdue').length;
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat"><div class="n">${total}</div><div class="l">Всего поручений</div></div>
+    <div class="stat done"><div class="n">${done}</div><div class="l">Исполнено полностью</div></div>
+    <div class="stat"><div class="n">${total-done-overdue}</div><div class="l">В работе, без просрочек</div></div>
+    <div class="stat overdue"><div class="n">${overdue}</div><div class="l">С просроченными пунктами</div></div>`;
+}
+
+function cssId(s){ return s.replace(/[^\w]/g,'_'); }
+
+function renderOrders(){
+  const list = document.getElementById('orders-list');
+  let filtered = orders.filter(o=>{
+    if(activeFilter!=='all' && orderStatus(o)!==activeFilter) return false;
+    if(searchTerm && !o.title.toLowerCase().includes(searchTerm)) return false;
+    return true;
+  });
+  if(filtered.length===0){ list.innerHTML = '<div class="empty-note">По заданным условиям поручений не найдено.</div>'; return; }
+  list.innerHTML = filtered.map(order=>{
+    const status = orderStatus(order); const prog = orderProgress(order);
+    const label = status==='done'?'Исполнено':status==='overdue'?'Просрочено':'В работе';
+    const items = [...(order.items||[])].sort((a,b)=>a.id.localeCompare(b.id));
+    return `<div class="order" id="order-${cssId(order.id)}">
+      <div class="order-head" onclick="toggleOrder('${order.id}')">
+        <div class="seal ${status}"><div class="pct">${prog}%</div><div class="pctlabel">готово</div></div>
+        <div class="order-head-main">
+          <div class="order-num">№ ${order.id} · протокол от ${fmtDate(order.issued)}</div>
+          <div class="order-title">${order.title}</div>
+          <div class="order-meta"><span>Ответственный: ${userName(order.responsible)}</span><span class="badge ${status}">${label}</span></div>
+        </div>
+        <div class="chevron">›</div>
+      </div>
+      <div class="order-body">
+        ${items.map(i=>renderItem(i, order)).join('') || '<div class="empty-note">Пунктов пока нет.</div>'}
+        ${renderAttachments(order)}
+        ${isAdmin() ? `<div class="admin-row">
+          <button class="btn-secondary small" onclick="event.stopPropagation();openItemModal('${order.id}')">+ Добавить пункт</button>
+          <button class="btn-danger small" onclick="event.stopPropagation();deleteOrder('${order.id}')">Удалить поручение</button>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderItem(item, order){
+  const st = itemStatus(item); const stale = isStale(item); const editable = canEdit(item, order);
+  return `<div class="item">
+    <div>
+      <div class="item-text">${item.text}</div>
+      <div class="item-sub">
+        <span class="badge ${st}">${st==='done'?'Исполнено':st==='overdue'?'Просрочено':'В работе'}</span>
+        <span>обновлено: ${fmtDateTime(item.last_at)} · ${userName(item.last_by)}</span>
+        ${stale ? '<span class="stale-flag">⏳ нет обновления &gt;7 дней</span>' : ''}
+      </div>
+    </div>
+    <div><div class="bar-wrap"><div class="bar-fill ${st}" style="width:${item.progress}%"></div></div><div class="bar-pct">${item.progress}%</div></div>
+    <div class="item-deadline">до ${fmtDate(item.deadline)}</div>
+    <div class="item-edit">
+      ${editable ? `<input type="number" min="0" max="100" value="${item.progress}" id="inp-${item.id}"><button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">только для ответственного</div>`}
+      ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function canManageFiles(order){
+  if(!currentProfile) return false;
+  return currentProfile.role === 'admin' || currentProfile.id === order.responsible;
+}
+
+function fileIcon(name){
+  const ext = (name.split('.').pop()||'').toLowerCase();
+  if(['pdf'].includes(ext)) return '📕';
+  if(['doc','docx'].includes(ext)) return '📘';
+  if(['xls','xlsx'].includes(ext)) return '📗';
+  if(['jpg','jpeg','png','gif','webp'].includes(ext)) return '🖼️';
+  return '📎';
+}
+
+function renderAttachments(order){
+  const files = order.attachments || [];
+  const canManage = canManageFiles(order);
+  const list = files.length ? files.map(f=>`
+    <div class="file-item">
+      <span class="file-name">${fileIcon(f.file_name)} ${f.file_name}</span>
+      <span class="file-actions">
+        <button class="btn-secondary small" onclick="event.stopPropagation();downloadFile('${f.file_path}','${f.file_name.replace(/'/g,"\\'")}')">Скачать</button>
+        ${canManage ? `<button class="item-delete" title="Удалить файл" onclick="event.stopPropagation();deleteFile(${f.id},'${f.file_path}')">✕</button>` : ''}
+      </span>
+    </div>`).join('') : '<div class="empty-note" style="padding:10px 0">Файлов пока нет.</div>';
+  const uploadRow = canManage ? `
+    <div class="upload-row" onclick="event.stopPropagation()">
+      <input type="file" id="file-inp-${cssId(order.id)}">
+      <button class="btn-secondary small" onclick="uploadFile('${order.id}')">Загрузить файл</button>
+      <span class="modal-error" id="file-err-${cssId(order.id)}"></span>
+    </div>` : '';
+  return `<div class="attachments-block">
+    <div class="attachments-title">Прикреплённые файлы</div>
+    ${list}
+    ${uploadRow}
+  </div>`;
+}
+
+async function uploadFile(orderId){
+  const input = document.getElementById('file-inp-'+cssId(orderId));
+  const errEl = document.getElementById('file-err-'+cssId(orderId));
+  const file = input.files[0];
+  if(!file){ errEl.textContent = 'Выберите файл.'; return; }
+  errEl.textContent = 'Загрузка…';
+  const path = `${cssId(orderId)}/${Date.now()}_${file.name}`;
+  const { error: upErr } = await sb.storage.from('attachments').upload(path, file);
+  if(upErr){ errEl.textContent = 'Ошибка: ' + upErr.message; return; }
+  const { error: insErr } = await sb.from('attachments').insert({
+    order_id: orderId, file_name: file.name, file_path: path, uploaded_by: currentProfile.id
+  });
+  if(insErr){ errEl.textContent = 'Ошибка: ' + insErr.message; return; }
+  await loadAll();
+  toggleOrder(orderId);
+}
+
+async function downloadFile(path, name){
+  const { data, error } = await sb.storage.from('attachments').createSignedUrl(path, 60);
+  if(error){ alert('Не удалось получить ссылку: ' + error.message); return; }
+  const a = document.createElement('a');
+  a.href = data.signedUrl; a.download = name; a.target = '_blank';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+async function deleteFile(attachmentId, path){
+  if(!confirm('Удалить этот файл?')) return;
+  await sb.storage.from('attachments').remove([path]);
+  await sb.from('attachments').delete().eq('id', attachmentId);
+  await loadAll();
+}
+
+function toggleOrder(id){ document.getElementById('order-'+cssId(id)).classList.toggle('open'); }
+
+async function saveProgress(orderId, itemId){
+  const order = orders.find(o=>o.id===orderId);
+  const item = order.items.find(i=>i.id===itemId);
+  const input = document.getElementById('inp-'+itemId);
+  let val = parseInt(input.value,10);
+  if(isNaN(val)) return;
+  val = Math.max(0, Math.min(100, val));
+  if(val === item.progress) return;
+  const oldVal = item.progress;
+  const nowIso = new Date().toISOString();
+
+  const { error: updErr } = await sb.from('items').update({
+    progress: val, last_by: currentProfile.id, last_at: nowIso
+  }).eq('id', itemId);
+  if(updErr){ alert('Не удалось сохранить: ' + updErr.message); return; }
+
+  await sb.from('history').insert({
+    user_id: currentProfile.id, order_id: orderId, item_id: itemId,
+    item_text: item.text, from_progress: oldVal, to_progress: val
+  });
+
+  await loadAll();
+  toggleOrder(orderId);
+}
+
+function renderHistory(){
+  const el = document.getElementById('history-list');
+  document.getElementById('history-count').textContent = history.length + ' записей';
+  if(history.length===0){ el.innerHTML = '<div class="empty-note">Изменений пока не зафиксировано.</div>'; return; }
+  el.innerHTML = history.map(h=>`<div class="h-entry">
+    <div class="h-date">${fmtDateTime(h.ts)}</div>
+    <div class="h-user">${userName(h.user_id)}</div>
+    <div class="h-change">№ ${h.order_id} · «${h.item_text}» — <b>${h.from_progress}%</b> → <b>${h.to_progress}%</b></div>
+  </div>`).join('');
+}
+
+function renderAll(){ renderStats(); renderOrders(); if(document.getElementById('tab-users').style.display==='block') renderUsers(); }
+
+// ================= МОДАЛЬНЫЕ ОКНА =================
+function openModal(html){
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.getElementById('modal-body').innerHTML = '';
+}
+
+// ---- Новое поручение ----
+function openOrderModal(){
+  const options = Object.values(profilesById)
+    .sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'))
+    .map(p=>`<option value="${p.id}">${p.full_name} (${p.role==='admin'?'админ':'менеджер'})</option>`).join('');
+  openModal(`
+    <h3>Новое поручение</h3>
+    <div class="field"><label>Номер поручения</label><input id="new-order-id" placeholder="например 15/2026"></div>
+    <div class="field"><label>Название / содержание</label><input id="new-order-title"></div>
+    <div class="field"><label>Дата протокола</label><input id="new-order-issued" type="date"></div>
+    <div class="field"><label>Ответственный</label><select id="new-order-resp"><option value="">— выберите —</option>${options}</select></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn-primary" style="width:auto" onclick="submitNewOrder()">Создать</button>
+    </div>
+    <div class="modal-error" id="order-modal-error"></div>
+  `);
+}
+async function submitNewOrder(){
+  const id = document.getElementById('new-order-id').value.trim();
+  const title = document.getElementById('new-order-title').value.trim();
+  const issued = document.getElementById('new-order-issued').value;
+  const responsible = document.getElementById('new-order-resp').value;
+  const errEl = document.getElementById('order-modal-error');
+  if(!id || !title || !issued || !responsible){ errEl.textContent = 'Заполните все поля.'; return; }
+  const { error } = await sb.from('orders').insert({ id, title, issued, responsible });
+  if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
+  closeModal();
+  await loadAll();
+}
+
+// ---- Новый пункт ----
+function openItemModal(orderId){
+  const order = orders.find(o=>o.id===orderId);
+  const nextNum = (order.items ? order.items.length : 0) + 1;
+  const suggestedId = orderId.split('/')[0].replace(/[^\w]/g,'') + '-' + nextNum;
+  openModal(`
+    <h3>Новый пункт поручения № ${orderId}</h3>
+    <div class="field"><label>Код пункта</label><input id="new-item-id" value="${suggestedId}"></div>
+    <div class="modal-hint">Должен быть уникальным во всей базе.</div>
+    <div class="field"><label>Текст пункта</label><input id="new-item-text"></div>
+    <div class="field"><label>Срок исполнения</label><input id="new-item-deadline" type="date"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn-primary" style="width:auto" onclick="submitNewItem('${orderId}')">Добавить</button>
+    </div>
+    <div class="modal-error" id="item-modal-error"></div>
+  `);
+}
+async function submitNewItem(orderId){
+  const id = document.getElementById('new-item-id').value.trim();
+  const text = document.getElementById('new-item-text').value.trim();
+  const deadline = document.getElementById('new-item-deadline').value;
+  const errEl = document.getElementById('item-modal-error');
+  if(!id || !text || !deadline){ errEl.textContent = 'Заполните все поля.'; return; }
+  const { error } = await sb.from('items').insert({
+    id, order_id: orderId, text, deadline, progress: 0,
+    last_by: currentProfile.id, last_at: new Date().toISOString()
+  });
+  if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
+  closeModal();
+  await loadAll();
+}
+
+// ---- Удаление ----
+async function deleteItem(itemId){
+  if(!confirm('Удалить этот пункт поручения?')) return;
+  const { error } = await sb.from('items').delete().eq('id', itemId);
+  if(error){ alert('Не удалось удалить: ' + error.message); return; }
+  await loadAll();
+}
+async function deleteOrder(orderId){
+  if(!confirm('Удалить поручение целиком, включая все его пункты и историю? Это необратимо.')) return;
+  const { error } = await sb.from('orders').delete().eq('id', orderId);
+  if(error){ alert('Не удалось удалить: ' + error.message); return; }
+  await loadAll();
+}
+
+// ---- Пользователи ----
+function renderUsers(){
+  const el = document.getElementById('users-list');
+  if(!el) return;
+  const list = Object.values(profilesById).sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'));
+  if(list.length===0){ el.innerHTML = '<div class="empty-note">Пользователей нет.</div>'; return; }
+  el.innerHTML = list.map(p=>`<div class="h-entry">
+    <div class="h-user">${p.full_name}</div>
+    <div class="h-change">${p.login} · ${p.role === 'admin' ? 'Администратор' : 'Менеджер'}</div>
+  </div>`).join('');
+}
+function openInviteModal(){
+  openModal(`
+    <h3>Пригласить сотрудника</h3>
+    <div class="field"><label>ФИО</label><input id="inv-name"></div>
+    <div class="field"><label>Логин</label><input id="inv-login" placeholder="например ivanov"></div>
+    <div class="field"><label>Email</label><input id="inv-email" type="email"></div>
+    <div class="field"><label>Временный пароль</label><input id="inv-pass" type="text" placeholder="минимум 6 символов"></div>
+    <div class="field"><label>Роль</label>
+      <select id="inv-role"><option value="manager">Менеджер</option><option value="admin">Администратор</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn-primary" style="width:auto" id="inv-submit-btn" onclick="submitInvite()">Создать</button>
+    </div>
+    <div class="modal-error" id="invite-modal-error"></div>
+  `);
+}
+async function submitInvite(){
+  const full_name = document.getElementById('inv-name').value.trim();
+  const login = document.getElementById('inv-login').value.trim();
+  const email = document.getElementById('inv-email').value.trim();
+  const password = document.getElementById('inv-pass').value;
+  const role = document.getElementById('inv-role').value;
+  const errEl = document.getElementById('invite-modal-error');
+  const btn = document.getElementById('inv-submit-btn');
+  if(!full_name || !login || !email || !password || !role){ errEl.textContent = 'Заполните все поля.'; return; }
+  btn.disabled = true; errEl.textContent = 'Создание…';
+  const { data: { session } } = await sb.auth.getSession();
+  try{
+    const resp = await fetch('/api/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      body: JSON.stringify({ full_name, login, email, password, role })
+    });
+    const data = await resp.json();
+    if(!resp.ok){ errEl.textContent = 'Ошибка: ' + (data.error || resp.statusText); btn.disabled = false; return; }
+    closeModal();
+    await loadAll();
+  }catch(e){
+    errEl.textContent = 'Ошибка сети: ' + e.message;
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
