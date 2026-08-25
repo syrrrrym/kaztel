@@ -440,7 +440,17 @@ async function uploadFile(orderId){
   const file = input.files[0];
   if(!file){ errEl.textContent = 'Выберите файл.'; return; }
   errEl.textContent = 'Загрузка…';
-  const path = `${cssId(orderId)}/${Date.now()}_${file.name}`;
+
+  // "очищаем" имя файла для ключа Storage: только латиница/цифры/точки/дефисы
+  const extMatch = file.name.match(/\.[^.]+$/);
+  const ext = extMatch ? extMatch[0] : '';
+  const safeName = file.name
+    .replace(ext, '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '') // убрать диакритику, если есть
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')                  // всё остальное (кириллица, пробелы) -> "_"
+    .slice(0, 60) || 'file';
+
+  const path = `${cssId(orderId)}/${Date.now()}_${safeName}${ext}`;
   const { error: upErr } = await sb.storage.from('attachments').upload(path, file);
   if(upErr){ errEl.textContent = 'Ошибка: ' + upErr.message; return; }
   const { error: insErr } = await sb.from('attachments').insert({
