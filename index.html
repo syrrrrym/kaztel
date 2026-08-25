@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -16,7 +17,7 @@
   *{box-sizing:border-box;}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;}
   .mono{font-family:'IBM Plex Mono',monospace;}
-  button{font-family:inherit;cursor:pointer;} input,select{font-family:inherit;}
+  button{font-family:inherit;cursor:pointer;} input,select,textarea{font-family:inherit;}
   :focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   #login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
   .login-card{background:var(--paper-raised);border:1px solid var(--line);max-width:420px;width:100%;padding:40px 36px;position:relative;}
@@ -75,8 +76,9 @@
   .order.open .chevron{transform:rotate(90deg);}
   .order-body{display:none;border-top:1px solid var(--line);padding:4px 20px 18px;}
   .order.open .order-body{display:block;}
-  .item{display:grid;grid-template-columns:1fr 140px 110px 150px;gap:14px;align-items:center;padding:14px 0;border-bottom:1px dashed var(--line);}
+  .item{padding:14px 0;border-bottom:1px dashed var(--line);}
   .item:last-child{border-bottom:none;}
+  .item-row{display:grid;grid-template-columns:1fr 140px 110px 150px;gap:14px;align-items:center;}
   .item-text{font-size:13.5px;line-height:1.4;}
   .item-sub{font-size:11.5px;color:var(--ink-soft);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .stale-flag{color:var(--overdue);font-size:11px;}
@@ -89,6 +91,11 @@
   .item-edit input{width:56px;padding:6px;border:1px solid var(--line);font-size:12.5px;font-family:'IBM Plex Mono',monospace;}
   .item-edit button{padding:6px 10px;font-size:11.5px;background:var(--ink);color:#fff;border:none;}
   .locked-note{font-size:11px;color:var(--ink-soft);font-style:italic;}
+  .item-execution{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);}
+  .item-execution-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:6px;}
+  .item-execution textarea{width:100%;min-height:56px;padding:9px 11px;border:1px solid var(--line);background:#fff;font-size:13px;line-height:1.4;resize:vertical;}
+  .item-execution-readonly{font-size:13px;line-height:1.5;color:var(--ink);white-space:pre-wrap;}
+  .item-execution-readonly.empty{color:var(--ink-soft);font-style:italic;}
   .history-list{background:var(--paper-raised);border:1px solid var(--line);}
   .h-entry{display:flex;gap:14px;padding:13px 18px;border-bottom:1px solid var(--line);font-size:12.5px;align-items:baseline;}
   .h-entry:last-child{border-bottom:none;}
@@ -99,7 +106,6 @@
   section.title-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
   section.title-row h2{font-family:'IBM Plex Serif',serif;font-size:17px;margin:0;}
   section.title-row .count{font-size:12px;color:var(--ink-soft);}
-  /* --- admin controls --- */
   .btn-secondary{padding:9px 14px;background:var(--paper-raised);border:1px solid var(--line);font-size:12.5px;color:var(--ink);}
   .btn-danger{padding:9px 14px;background:transparent;border:1px solid var(--overdue);color:var(--overdue);font-size:12.5px;}
   .btn-secondary.small,.btn-danger.small{padding:6px 10px;font-size:11px;}
@@ -122,7 +128,7 @@
   .upload-row input[type=file]{font-size:12px;max-width:220px;}
   @media(max-width:720px){
     .stats-row{grid-template-columns:repeat(2,1fr);}
-    .item{grid-template-columns:1fr;gap:8px;}
+    .item-row{grid-template-columns:1fr;gap:8px;}
     main{padding:18px 14px 60px;}
     .h-entry{flex-direction:column;gap:2px;} .h-date{width:auto;} .h-user{width:auto;}
   }
@@ -205,6 +211,8 @@ function today(){ return new Date(); }
 function daysBetween(a,b){ return Math.round((b-a)/(1000*60*60*24)); }
 function userName(id){ return profilesById[id] ? profilesById[id].full_name : '—'; }
 function isAdmin(){ return !!(currentProfile && currentProfile.role === 'admin'); }
+function escAttr(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
+function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 async function attemptLogin(){
   const email = document.getElementById('login-email').value.trim();
@@ -251,7 +259,6 @@ async function logout(){
   document.getElementById('login-pass').value = '';
 }
 
-// Восстановление сессии при перезагрузке страницы
 sb.auth.onAuthStateChange((event, session) => {
   if(event === 'SIGNED_IN' && !currentProfile) afterLogin();
 });
@@ -361,20 +368,30 @@ function renderOrders(){
 
 function renderItem(item, order){
   const st = itemStatus(item); const stale = isStale(item); const editable = canEdit(item, order);
+  const notes = item.execution_notes || '';
   return `<div class="item">
-    <div>
-      <div class="item-text">${item.text}</div>
-      <div class="item-sub">
-        <span class="badge ${st}">${st==='done'?'Исполнено':st==='overdue'?'Просрочено':'В работе'}</span>
-        <span>обновлено: ${fmtDateTime(item.last_at)} · ${userName(item.last_by)}</span>
-        ${stale ? '<span class="stale-flag">⏳ нет обновления &gt;7 дней</span>' : ''}
+    <div class="item-row">
+      <div>
+        <div class="item-text">${escHtml(item.text)}</div>
+        <div class="item-sub">
+          <span class="badge ${st}">${st==='done'?'Исполнено':st==='overdue'?'Просрочено':'В работе'}</span>
+          <span>обновлено: ${fmtDateTime(item.last_at)} · ${userName(item.last_by)}</span>
+          ${stale ? '<span class="stale-flag">⏳ нет обновления &gt;7 дней</span>' : ''}
+        </div>
+      </div>
+      <div><div class="bar-wrap"><div class="bar-fill ${st}" style="width:${item.progress}%"></div></div><div class="bar-pct">${item.progress}%</div></div>
+      <div class="item-deadline">до ${fmtDate(item.deadline)}</div>
+      <div class="item-edit">
+        ${editable ? `<input type="number" min="0" max="100" value="${item.progress}" id="inp-${item.id}"><button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">только для ответственного</div>`}
+        ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
       </div>
     </div>
-    <div><div class="bar-wrap"><div class="bar-fill ${st}" style="width:${item.progress}%"></div></div><div class="bar-pct">${item.progress}%</div></div>
-    <div class="item-deadline">до ${fmtDate(item.deadline)}</div>
-    <div class="item-edit">
-      ${editable ? `<input type="number" min="0" max="100" value="${item.progress}" id="inp-${item.id}"><button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">только для ответственного</div>`}
-      ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
+    <div class="item-execution">
+      <div class="item-execution-label">Исполнение (комментарий)</div>
+      ${editable
+        ? `<textarea id="exec-${item.id}" placeholder="Опишите, что сделано: реквизиты решений, документов, ссылки...">${escHtml(notes)}</textarea>`
+        : `<div class="item-execution-readonly ${notes ? '' : 'empty'}">${notes ? escHtml(notes) : 'Комментарий не заполнен.'}</div>`
+      }
     </div>
   </div>`;
 }
@@ -398,10 +415,10 @@ function renderAttachments(order){
   const canManage = canManageFiles(order);
   const list = files.length ? files.map(f=>`
     <div class="file-item">
-      <span class="file-name">${fileIcon(f.file_name)} ${f.file_name}</span>
+      <span class="file-name">${fileIcon(f.file_name)} ${escHtml(f.file_name)}</span>
       <span class="file-actions">
-        <button class="btn-secondary small" onclick="event.stopPropagation();downloadFile('${f.file_path}','${f.file_name.replace(/'/g,"\\'")}')">Скачать</button>
-        ${canManage ? `<button class="item-delete" title="Удалить файл" onclick="event.stopPropagation();deleteFile(${f.id},'${f.file_path}')">✕</button>` : ''}
+        <button class="btn-secondary small" onclick="event.stopPropagation();downloadFile('${escAttr(f.file_path)}','${escAttr(f.file_name).replace(/'/g,"\\'")}')">Скачать</button>
+        ${canManage ? `<button class="item-delete" title="Удалить файл" onclick="event.stopPropagation();deleteFile(${f.id},'${escAttr(f.file_path)}')">✕</button>` : ''}
       </span>
     </div>`).join('') : '<div class="empty-note" style="padding:10px 0">Файлов пока нет.</div>';
   const uploadRow = canManage ? `
@@ -455,22 +472,28 @@ async function saveProgress(orderId, itemId){
   const order = orders.find(o=>o.id===orderId);
   const item = order.items.find(i=>i.id===itemId);
   const input = document.getElementById('inp-'+itemId);
+  const notesInput = document.getElementById('exec-'+itemId);
   let val = parseInt(input.value,10);
   if(isNaN(val)) return;
   val = Math.max(0, Math.min(100, val));
-  if(val === item.progress) return;
+  const newNotes = notesInput ? notesInput.value : (item.execution_notes || '');
+  const oldNotes = item.execution_notes || '';
+  if(val === item.progress && newNotes === oldNotes) return;
+
   const oldVal = item.progress;
   const nowIso = new Date().toISOString();
 
   const { error: updErr } = await sb.from('items').update({
-    progress: val, last_by: currentProfile.id, last_at: nowIso
+    progress: val, execution_notes: newNotes, last_by: currentProfile.id, last_at: nowIso
   }).eq('id', itemId);
   if(updErr){ alert('Не удалось сохранить: ' + updErr.message); return; }
 
-  await sb.from('history').insert({
-    user_id: currentProfile.id, order_id: orderId, item_id: itemId,
-    item_text: item.text, from_progress: oldVal, to_progress: val
-  });
+  if(val !== oldVal){
+    await sb.from('history').insert({
+      user_id: currentProfile.id, order_id: orderId, item_id: itemId,
+      item_text: item.text, from_progress: oldVal, to_progress: val
+    });
+  }
 
   await loadAll();
   toggleOrder(orderId);
@@ -483,7 +506,7 @@ function renderHistory(){
   el.innerHTML = history.map(h=>`<div class="h-entry">
     <div class="h-date">${fmtDateTime(h.ts)}</div>
     <div class="h-user">${userName(h.user_id)}</div>
-    <div class="h-change">№ ${h.order_id} · «${h.item_text}» — <b>${h.from_progress}%</b> → <b>${h.to_progress}%</b></div>
+    <div class="h-change">№ ${h.order_id} · «${escHtml(h.item_text)}» — <b>${h.from_progress}%</b> → <b>${h.to_progress}%</b></div>
   </div>`).join('');
 }
 
@@ -499,7 +522,6 @@ function closeModal(){
   document.getElementById('modal-body').innerHTML = '';
 }
 
-// ---- Новое поручение ----
 function openOrderModal(){
   const options = Object.values(profilesById)
     .sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'))
@@ -530,7 +552,6 @@ async function submitNewOrder(){
   await loadAll();
 }
 
-// ---- Новый пункт ----
 function openItemModal(orderId){
   const order = orders.find(o=>o.id===orderId);
   const nextNum = (order.items ? order.items.length : 0) + 1;
@@ -555,7 +576,7 @@ async function submitNewItem(orderId){
   const errEl = document.getElementById('item-modal-error');
   if(!id || !text || !deadline){ errEl.textContent = 'Заполните все поля.'; return; }
   const { error } = await sb.from('items').insert({
-    id, order_id: orderId, text, deadline, progress: 0,
+    id, order_id: orderId, text, deadline, progress: 0, execution_notes: '',
     last_by: currentProfile.id, last_at: new Date().toISOString()
   });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
@@ -563,7 +584,6 @@ async function submitNewItem(orderId){
   await loadAll();
 }
 
-// ---- Удаление ----
 async function deleteItem(itemId){
   if(!confirm('Удалить этот пункт поручения?')) return;
   const { error } = await sb.from('items').delete().eq('id', itemId);
@@ -577,15 +597,14 @@ async function deleteOrder(orderId){
   await loadAll();
 }
 
-// ---- Пользователи ----
 function renderUsers(){
   const el = document.getElementById('users-list');
   if(!el) return;
   const list = Object.values(profilesById).sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'));
   if(list.length===0){ el.innerHTML = '<div class="empty-note">Пользователей нет.</div>'; return; }
   el.innerHTML = list.map(p=>`<div class="h-entry">
-    <div class="h-user">${p.full_name}</div>
-    <div class="h-change">${p.login} · ${p.role === 'admin' ? 'Администратор' : 'Менеджер'}</div>
+    <div class="h-user">${escHtml(p.full_name)}</div>
+    <div class="h-change">${escHtml(p.login)} · ${p.role === 'admin' ? 'Администратор' : 'Менеджер'}</div>
   </div>`).join('');
 }
 function openInviteModal(){
