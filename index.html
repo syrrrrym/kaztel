@@ -86,6 +86,8 @@
   .bar-fill.done{background:var(--done);} .bar-fill.overdue{background:var(--overdue);}
   .bar-pct{font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin-top:4px;color:var(--ink-soft);}
   .item-deadline{font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
+  .date-edit-row{display:flex;flex-direction:column;gap:4px;}
+  .date-edit-row input[type=date]{padding:4px 6px;border:1px solid var(--line);font-size:11px;font-family:'IBM Plex Mono',monospace;width:100%;}
   .item-edit{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
   .item-edit input{width:56px;padding:6px;border:1px solid var(--line);font-size:12.5px;font-family:'IBM Plex Mono',monospace;}
   .item-edit button{padding:6px 10px;font-size:11.5px;background:var(--ink);color:#fff;border:none;}
@@ -363,6 +365,7 @@ function renderOrders(){
         ${items.map(i=>renderItem(i, order)).join('') || '<div class="empty-note">Пунктов пока нет.</div>'}
         ${renderAttachments(order)}
         ${isAdmin() ? `<div class="admin-row">
+          <button class="btn-secondary small" onclick="event.stopPropagation();openEditOrderDatesModal('${order.id}')">Изменить срок поручения</button>
           <button class="btn-secondary small" onclick="event.stopPropagation();openItemModal('${order.id}')">+ Добавить пункт</button>
           <button class="btn-danger small" onclick="event.stopPropagation();deleteOrder('${order.id}')">Удалить поручение</button>
         </div>` : ''}
@@ -385,7 +388,12 @@ function renderItem(item, order){
         </div>
       </div>
       <div><div class="bar-wrap"><div class="bar-fill ${st}" style="width:${item.progress}%"></div></div><div class="bar-pct">${item.progress}%</div></div>
-      <div class="item-deadline">${item.date_from ? 'с '+fmtDate(item.date_from)+' ' : ''}до ${fmtDate(item.deadline)}</div>
+      <div class="item-deadline">
+        ${editable
+          ? `<div class="date-edit-row"><input type="date" value="${item.date_from||''}" id="datefrom-${item.id}" title="с"><input type="date" value="${item.deadline||''}" id="dateto-${item.id}" title="до"></div>`
+          : `${item.date_from ? 'с '+fmtDate(item.date_from)+' ' : ''}до ${fmtDate(item.deadline)}`
+        }
+      </div>
       <div class="item-edit">
         ${editable ? `<input type="number" min="0" max="100" value="${item.progress}" id="inp-${item.id}"><button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">только для ответственного</div>`}
         ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
@@ -488,18 +496,24 @@ async function saveProgress(orderId, itemId){
   const item = order.items.find(i=>i.id===itemId);
   const input = document.getElementById('inp-'+itemId);
   const notesInput = document.getElementById('exec-'+itemId);
+  const dateFromInput = document.getElementById('datefrom-'+itemId);
+  const dateToInput = document.getElementById('dateto-'+itemId);
   let val = parseInt(input.value,10);
   if(isNaN(val)) return;
   val = Math.max(0, Math.min(100, val));
   const newNotes = notesInput ? notesInput.value : (item.execution_notes || '');
   const oldNotes = item.execution_notes || '';
-  if(val === item.progress && newNotes === oldNotes) return;
+  const newDateFrom = dateFromInput ? (dateFromInput.value || null) : (item.date_from || null);
+  const newDeadline = dateToInput ? (dateToInput.value || item.deadline) : item.deadline;
+  const oldDateFrom = item.date_from || null;
+  if(val === item.progress && newNotes === oldNotes && newDateFrom === oldDateFrom && newDeadline === item.deadline) return;
 
   const oldVal = item.progress;
   const nowIso = new Date().toISOString();
 
   const { error: updErr } = await sb.from('items').update({
-    progress: val, execution_notes: newNotes, last_by: currentProfile.id, last_at: nowIso
+    progress: val, execution_notes: newNotes, date_from: newDateFrom, deadline: newDeadline,
+    last_by: currentProfile.id, last_at: nowIso
   }).eq('id', itemId);
   if(updErr){ alert('Не удалось сохранить: ' + updErr.message); return; }
 
@@ -566,6 +580,29 @@ async function submitNewOrder(){
   const errEl = document.getElementById('order-modal-error');
   if(!id || !title || !issued || !responsible){ errEl.textContent = 'Заполните все поля.'; return; }
   const { error } = await sb.from('orders').insert({ id, title, issued, responsible, date_from, date_to });
+  if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
+  closeModal();
+  await loadAll();
+}
+
+function openEditOrderDatesModal(orderId){
+  const order = orders.find(o=>o.id===orderId);
+  openModal(`
+    <h3>Срок поручения № ${orderId}</h3>
+    <div class="field"><label>Период исполнения — с (необязательно)</label><input id="edit-order-datefrom" type="date" value="${order.date_from||''}"></div>
+    <div class="field"><label>Период исполнения — по (необязательно)</label><input id="edit-order-dateto" type="date" value="${order.date_to||''}"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn-primary" style="width:auto" onclick="submitEditOrderDates('${orderId}')">Сохранить</button>
+    </div>
+    <div class="modal-error" id="edit-order-dates-error"></div>
+  `);
+}
+async function submitEditOrderDates(orderId){
+  const date_from = document.getElementById('edit-order-datefrom').value || null;
+  const date_to = document.getElementById('edit-order-dateto').value || null;
+  const errEl = document.getElementById('edit-order-dates-error');
+  const { error } = await sb.from('orders').update({ date_from, date_to }).eq('id', orderId);
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
   closeModal();
   await loadAll();
