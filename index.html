@@ -79,6 +79,7 @@
   .item:last-child{border-bottom:none;}
   .item-row{display:grid;grid-template-columns:1fr 140px 110px 150px;gap:14px;align-items:center;}
   .item-text{font-size:13.5px;line-height:1.4;}
+  .item-num{font-weight:600;color:var(--gold);font-family:'IBM Plex Mono',monospace;}
   .item-sub{font-size:11.5px;color:var(--ink-soft);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .stale-flag{color:var(--overdue);font-size:11px;}
   .bar-wrap{background:#E3E0D4;height:7px;border-radius:4px;overflow:hidden;}
@@ -362,7 +363,7 @@ function renderOrders(){
         <div class="chevron">›</div>
       </div>
       <div class="order-body">
-        ${items.map(i=>renderItem(i, order)).join('') || '<div class="empty-note">Пунктов пока нет.</div>'}
+        ${items.map((i,idx)=>renderItem(i, order, idx+1)).join('') || '<div class="empty-note">Пунктов пока нет.</div>'}
         ${renderAttachments(order)}
         ${isAdmin() ? `<div class="admin-row">
           <button class="btn-secondary small" onclick="event.stopPropagation();openEditOrderDatesModal('${order.id}')">Изменить срок поручения</button>
@@ -374,13 +375,13 @@ function renderOrders(){
   }).join('');
 }
 
-function renderItem(item, order){
+function renderItem(item, order, num){
   const st = itemStatus(item); const stale = isStale(item); const editable = canEdit(item, order);
   const notes = item.execution_notes || '';
   return `<div class="item">
     <div class="item-row">
       <div>
-        <div class="item-text">${escHtml(item.text)}</div>
+        <div class="item-text"><span class="item-num">${num}.</span> ${escHtml(item.text)}</div>
         <div class="item-sub">
           <span class="badge ${st}">${st==='done'?'Исполнено':st==='overdue'?'Просрочено':'В работе'}</span>
           <span>обновлено: ${fmtDateTime(item.last_at)} · ${userName(item.last_by)}</span>
