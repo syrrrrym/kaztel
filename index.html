@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -288,8 +287,10 @@ function itemStatus(item){
 function orderStatus(order){
   if(!order.items || order.items.length === 0) return 'progress';
   const st = order.items.map(itemStatus);
-  if(st.includes('overdue')) return 'overdue';
-  if(st.every(s=>s==='done')) return 'done';
+  const overallDone = st.every(s=>s==='done');
+  const orderOverdue = order.date_to && !overallDone && today() > new Date(order.date_to);
+  if(st.includes('overdue') || orderOverdue) return 'overdue';
+  if(overallDone) return 'done';
   return 'progress';
 }
 function orderProgress(order){
@@ -344,11 +345,15 @@ function renderOrders(){
     const status = orderStatus(order); const prog = orderProgress(order);
     const label = status==='done'?'Исполнено':status==='overdue'?'Просрочено':'В работе';
     const items = [...(order.items||[])].sort((a,b)=>a.id.localeCompare(b.id));
+    const periodLine = (order.date_from || order.date_to)
+      ? `<div class="order-num" style="color:var(--ink-soft)">срок: ${order.date_from ? 'с '+fmtDate(order.date_from)+' ' : ''}${order.date_to ? 'по '+fmtDate(order.date_to) : ''}</div>`
+      : '';
     return `<div class="order" id="order-${cssId(order.id)}">
       <div class="order-head" onclick="toggleOrder('${order.id}')">
         <div class="seal ${status}"><div class="pct">${prog}%</div><div class="pctlabel">готово</div></div>
         <div class="order-head-main">
           <div class="order-num">№ ${order.id} · протокол от ${fmtDate(order.issued)}</div>
+          ${periodLine}
           <div class="order-title">${order.title}</div>
           <div class="order-meta"><span>Ответственный: ${userName(order.responsible)}</span><span class="badge ${status}">${label}</span></div>
         </div>
@@ -380,7 +385,7 @@ function renderItem(item, order){
         </div>
       </div>
       <div><div class="bar-wrap"><div class="bar-fill ${st}" style="width:${item.progress}%"></div></div><div class="bar-pct">${item.progress}%</div></div>
-      <div class="item-deadline">до ${fmtDate(item.deadline)}</div>
+      <div class="item-deadline">${item.date_from ? 'с '+fmtDate(item.date_from)+' ' : ''}до ${fmtDate(item.deadline)}</div>
       <div class="item-edit">
         ${editable ? `<input type="number" min="0" max="100" value="${item.progress}" id="inp-${item.id}"><button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">только для ответственного</div>`}
         ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
@@ -541,6 +546,8 @@ function openOrderModal(){
     <div class="field"><label>Номер поручения</label><input id="new-order-id" placeholder="например 15/2026"></div>
     <div class="field"><label>Название / содержание</label><input id="new-order-title"></div>
     <div class="field"><label>Дата протокола</label><input id="new-order-issued" type="date"></div>
+    <div class="field"><label>Период исполнения — с (необязательно)</label><input id="new-order-datefrom" type="date"></div>
+    <div class="field"><label>Период исполнения — по (необязательно)</label><input id="new-order-dateto" type="date"></div>
     <div class="field"><label>Ответственный</label><select id="new-order-resp"><option value="">— выберите —</option>${options}</select></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
@@ -553,10 +560,12 @@ async function submitNewOrder(){
   const id = document.getElementById('new-order-id').value.trim();
   const title = document.getElementById('new-order-title').value.trim();
   const issued = document.getElementById('new-order-issued').value;
+  const date_from = document.getElementById('new-order-datefrom').value || null;
+  const date_to = document.getElementById('new-order-dateto').value || null;
   const responsible = document.getElementById('new-order-resp').value;
   const errEl = document.getElementById('order-modal-error');
   if(!id || !title || !issued || !responsible){ errEl.textContent = 'Заполните все поля.'; return; }
-  const { error } = await sb.from('orders').insert({ id, title, issued, responsible });
+  const { error } = await sb.from('orders').insert({ id, title, issued, responsible, date_from, date_to });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
   closeModal();
   await loadAll();
@@ -571,7 +580,8 @@ function openItemModal(orderId){
     <div class="field"><label>Код пункта</label><input id="new-item-id" value="${suggestedId}"></div>
     <div class="modal-hint">Должен быть уникальным во всей базе.</div>
     <div class="field"><label>Текст пункта</label><input id="new-item-text"></div>
-    <div class="field"><label>Срок исполнения</label><input id="new-item-deadline" type="date"></div>
+    <div class="field"><label>Дата начала (необязательно)</label><input id="new-item-datefrom" type="date"></div>
+    <div class="field"><label>Срок исполнения — до</label><input id="new-item-deadline" type="date"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn-primary" style="width:auto" onclick="submitNewItem('${orderId}')">Добавить</button>
@@ -582,11 +592,12 @@ function openItemModal(orderId){
 async function submitNewItem(orderId){
   const id = document.getElementById('new-item-id').value.trim();
   const text = document.getElementById('new-item-text').value.trim();
+  const date_from = document.getElementById('new-item-datefrom').value || null;
   const deadline = document.getElementById('new-item-deadline').value;
   const errEl = document.getElementById('item-modal-error');
   if(!id || !text || !deadline){ errEl.textContent = 'Заполните все поля.'; return; }
   const { error } = await sb.from('items').insert({
-    id, order_id: orderId, text, deadline, progress: 0, execution_notes: '',
+    id, order_id: orderId, text, deadline, date_from, progress: 0, execution_notes: '',
     last_by: currentProfile.id, last_at: new Date().toISOString()
   });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
