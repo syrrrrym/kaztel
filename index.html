@@ -77,7 +77,10 @@
   .order.open .order-body{display:block;}
   .item{padding:14px 0;border-bottom:1px dashed var(--line);}
   .item:last-child{border-bottom:none;}
-  .item-row{display:grid;grid-template-columns:1fr 140px 110px 150px;gap:14px;align-items:center;}
+  .item-row{display:grid;grid-template-columns:1fr 130px 140px 150px;gap:14px;align-items:center;}
+  .item-check{display:flex;align-items:center;}
+  .check-label{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;}
+  .check-label input[type=checkbox]{width:18px;height:18px;accent-color:var(--done);cursor:pointer;}
   .item-text{font-size:13.5px;line-height:1.4;}
   .item-num{font-weight:600;color:var(--gold);font-family:'IBM Plex Mono',monospace;}
   .item-sub{font-size:11.5px;color:var(--ink-soft);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
@@ -302,9 +305,7 @@ function orderProgress(order){
 }
 function isStale(item){ return daysBetween(new Date(item.last_at), today()) > 7; }
 function canEdit(item, order){
-  if(!currentProfile) return false;
-  if(currentProfile.role === 'admin') return true;
-  return currentProfile.id === order.responsible;
+  return !!currentProfile;
 }
 
 function switchTab(tab){
@@ -358,7 +359,7 @@ function renderOrders(){
           <div class="order-num">№ ${order.id} · протокол от ${fmtDate(order.issued)}</div>
           ${periodLine}
           <div class="order-title">${order.title}</div>
-          <div class="order-meta"><span>Ответственный: ${userName(order.responsible)}</span><span class="badge ${status}">${label}</span></div>
+          <div class="order-meta"><span class="badge ${status}">${label}</span></div>
         </div>
         <div class="chevron">›</div>
       </div>
@@ -378,17 +379,24 @@ function renderOrders(){
 function renderItem(item, order, num){
   const st = itemStatus(item); const stale = isStale(item); const editable = canEdit(item, order);
   const notes = item.execution_notes || '';
+  const isDone = item.progress >= 100;
   return `<div class="item">
     <div class="item-row">
       <div>
         <div class="item-text"><span class="item-num">${num}.</span> ${escHtml(item.text)}</div>
         <div class="item-sub">
           <span class="badge ${st}">${st==='done'?'Исполнено':st==='overdue'?'Просрочено':'В работе'}</span>
+          <span>Ответственный: ${userName(item.responsible)}</span>
           <span>обновлено: ${fmtDateTime(item.last_at)} · ${userName(item.last_by)}</span>
           ${stale ? '<span class="stale-flag">⏳ нет обновления &gt;7 дней</span>' : ''}
         </div>
       </div>
-      <div><div class="bar-wrap"><div class="bar-fill ${st}" style="width:${item.progress}%"></div></div><div class="bar-pct">${item.progress}%</div></div>
+      <div class="item-check">
+        <label class="check-label">
+          <input type="checkbox" id="chk-${item.id}" ${isDone?'checked':''} ${editable?'':'disabled'}>
+          <span>${isDone ? 'Исполнено' : 'Не исполнено'}</span>
+        </label>
+      </div>
       <div class="item-deadline">
         ${editable
           ? `<div class="date-edit-row"><input type="date" value="${item.date_from||''}" id="datefrom-${item.id}" title="с"><input type="date" value="${item.deadline||''}" id="dateto-${item.id}" title="до"></div>`
@@ -396,7 +404,7 @@ function renderItem(item, order, num){
         }
       </div>
       <div class="item-edit">
-        ${editable ? `<input type="number" min="0" max="100" value="${item.progress}" id="inp-${item.id}"><button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">только для ответственного</div>`}
+        ${editable ? `<button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">войдите, чтобы отмечать</div>`}
         ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
       </div>
     </div>
@@ -412,7 +420,8 @@ function renderItem(item, order, num){
 
 function canManageFiles(order){
   if(!currentProfile) return false;
-  return currentProfile.role === 'admin' || currentProfile.id === order.responsible;
+  if(currentProfile.role === 'admin') return true;
+  return (order.items||[]).some(i => i.responsible === currentProfile.id);
 }
 
 function fileIcon(name){
@@ -495,13 +504,11 @@ function toggleOrder(id){ document.getElementById('order-'+cssId(id)).classList.
 async function saveProgress(orderId, itemId){
   const order = orders.find(o=>o.id===orderId);
   const item = order.items.find(i=>i.id===itemId);
-  const input = document.getElementById('inp-'+itemId);
+  const checkbox = document.getElementById('chk-'+itemId);
   const notesInput = document.getElementById('exec-'+itemId);
   const dateFromInput = document.getElementById('datefrom-'+itemId);
   const dateToInput = document.getElementById('dateto-'+itemId);
-  let val = parseInt(input.value,10);
-  if(isNaN(val)) return;
-  val = Math.max(0, Math.min(100, val));
+  const val = checkbox.checked ? 100 : 0;
   const newNotes = notesInput ? notesInput.value : (item.execution_notes || '');
   const oldNotes = item.execution_notes || '';
   const newDateFrom = dateFromInput ? (dateFromInput.value || null) : (item.date_from || null);
@@ -553,9 +560,6 @@ function closeModal(){
 }
 
 function openOrderModal(){
-  const options = Object.values(profilesById)
-    .sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'))
-    .map(p=>`<option value="${p.id}">${p.full_name} (${p.role==='admin'?'админ':'менеджер'})</option>`).join('');
   openModal(`
     <h3>Новое поручение</h3>
     <div class="field"><label>Номер поручения</label><input id="new-order-id" placeholder="например 15/2026"></div>
@@ -563,7 +567,6 @@ function openOrderModal(){
     <div class="field"><label>Дата протокола</label><input id="new-order-issued" type="date"></div>
     <div class="field"><label>Период исполнения — с (необязательно)</label><input id="new-order-datefrom" type="date"></div>
     <div class="field"><label>Период исполнения — по (необязательно)</label><input id="new-order-dateto" type="date"></div>
-    <div class="field"><label>Ответственный</label><select id="new-order-resp"><option value="">— выберите —</option>${options}</select></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn-primary" style="width:auto" onclick="submitNewOrder()">Создать</button>
@@ -577,10 +580,9 @@ async function submitNewOrder(){
   const issued = document.getElementById('new-order-issued').value;
   const date_from = document.getElementById('new-order-datefrom').value || null;
   const date_to = document.getElementById('new-order-dateto').value || null;
-  const responsible = document.getElementById('new-order-resp').value;
   const errEl = document.getElementById('order-modal-error');
-  if(!id || !title || !issued || !responsible){ errEl.textContent = 'Заполните все поля.'; return; }
-  const { error } = await sb.from('orders').insert({ id, title, issued, responsible, date_from, date_to });
+  if(!id || !title || !issued){ errEl.textContent = 'Заполните все поля.'; return; }
+  const { error } = await sb.from('orders').insert({ id, title, issued, date_from, date_to });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
   closeModal();
   await loadAll();
@@ -613,11 +615,15 @@ function openItemModal(orderId){
   const order = orders.find(o=>o.id===orderId);
   const nextNum = (order.items ? order.items.length : 0) + 1;
   const suggestedId = orderId.split('/')[0].replace(/[^\w]/g,'') + '-' + nextNum;
+  const options = Object.values(profilesById)
+    .sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'))
+    .map(p=>`<option value="${p.id}">${p.full_name} (${p.role==='admin'?'админ':'менеджер'})</option>`).join('');
   openModal(`
     <h3>Новый пункт поручения № ${orderId}</h3>
     <div class="field"><label>Код пункта</label><input id="new-item-id" value="${suggestedId}"></div>
     <div class="modal-hint">Должен быть уникальным во всей базе.</div>
     <div class="field"><label>Текст пункта</label><input id="new-item-text"></div>
+    <div class="field"><label>Ответственный (необязательно)</label><select id="new-item-resp"><option value="">— не назначен —</option>${options}</select></div>
     <div class="field"><label>Дата начала (необязательно)</label><input id="new-item-datefrom" type="date"></div>
     <div class="field"><label>Срок исполнения — до</label><input id="new-item-deadline" type="date"></div>
     <div class="modal-actions">
@@ -630,12 +636,13 @@ function openItemModal(orderId){
 async function submitNewItem(orderId){
   const id = document.getElementById('new-item-id').value.trim();
   const text = document.getElementById('new-item-text').value.trim();
+  const responsible = document.getElementById('new-item-resp').value || null;
   const date_from = document.getElementById('new-item-datefrom').value || null;
   const deadline = document.getElementById('new-item-deadline').value;
   const errEl = document.getElementById('item-modal-error');
   if(!id || !text || !deadline){ errEl.textContent = 'Заполните все поля.'; return; }
   const { error } = await sb.from('items').insert({
-    id, order_id: orderId, text, deadline, date_from, progress: 0, execution_notes: '',
+    id, order_id: orderId, text, deadline, date_from, responsible, progress: 0, execution_notes: '',
     last_by: currentProfile.id, last_at: new Date().toISOString()
   });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
