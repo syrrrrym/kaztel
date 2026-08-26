@@ -66,9 +66,10 @@
   .order-head-main{flex:1;min-width:0;}
   .order-num-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .order-num{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--gold);}
-  .header-attach-btn{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-family:'IBM Plex Mono',monospace;background:var(--paper);border:1px solid var(--line);color:var(--ink-soft);padding:2px 8px;border-radius:12px;line-height:1.6;}
+  .header-attach-btn{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-family:'IBM Plex Mono',monospace;background:var(--paper);border:1px solid var(--line);color:var(--ink-soft);padding:2px 8px;border-radius:12px;line-height:1.6;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;}
   .header-attach-btn:hover{border-color:var(--gold);color:var(--ink);}
   .header-attach-btn.has-files{color:var(--ink);border-color:var(--line);background:#fff;}
+  .header-order-file{display:inline-flex;align-items:center;gap:4px;}
   .order-title{font-family:'IBM Plex Serif',serif;font-size:15.5px;margin:3px 0 6px;font-weight:600;}
   .order-meta{font-size:12px;color:var(--ink-soft);display:flex;gap:14px;flex-wrap:wrap;}
   .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;text-transform:uppercase;padding:3px 9px;border-radius:2px;font-weight:600;}
@@ -362,7 +363,7 @@ function renderOrders(){
         <div class="order-head-main">
           <div class="order-num-row">
             <div class="order-num">№ ${order.id}${order.issued ? ' · протокол от ' + fmtDate(order.issued) : ''}</div>
-            ${renderHeaderAttach(order)}
+            ${renderHeaderOrderFile(order)}
           </div>
           ${periodLine}
           <div class="order-title">${order.title}</div>
@@ -440,20 +441,58 @@ function fileIcon(name){
   return '📎';
 }
 
-// ---- Значок с файлами прямо в свёрнутом заголовке поручения ----
-function renderHeaderAttach(order){
-  const count = (order.attachments || []).length;
+// ---- Файл приказа: один файл на уровне поручения, виден прямо в заголовке ----
+function renderHeaderOrderFile(order){
   const canManage = canManageFiles(order);
-  if(!canManage && count === 0) return '';
-  const label = canManage ? (count ? `📎 ${count}` : '📎 Загрузить') : `📎 ${count}`;
-  const clickAction = canManage
-    ? `document.getElementById('hfile-${cssId(order.id)}').click()`
-    : `toggleOrder('${order.id}')`;
+  const hasFile = !!order.order_file_name;
+  if(!hasFile && !canManage) return '';
+  if(hasFile){
+    return `<span class="header-order-file">
+      <button type="button" class="header-attach-btn has-files" title="Скачать приказ: ${escAttr(order.order_file_name)}"
+        onclick="event.stopPropagation(); downloadFile('${escAttr(order.order_file_path)}','${escAttr(order.order_file_name).replace(/'/g,"\\'")}')">📄 ${escHtml(order.order_file_name)}</button>
+      ${canManage ? `
+        <input type="file" id="hforder-${cssId(order.id)}" style="display:none" onclick="event.stopPropagation()" onchange="uploadOrderFile('${order.id}')">
+        <button type="button" class="header-attach-btn" title="Заменить файл" onclick="event.stopPropagation(); document.getElementById('hforder-${cssId(order.id)}').click()">⟳</button>
+        <button type="button" class="header-attach-btn" title="Удалить файл приказа" onclick="event.stopPropagation(); removeOrderFile('${order.id}')">✕</button>
+      ` : ''}
+    </span>`;
+  }
   return `<span>
-    ${canManage ? `<input type="file" id="hfile-${cssId(order.id)}" style="display:none" onclick="event.stopPropagation()" onchange="uploadFileFromHeader('${order.id}')">` : ''}
-    <button type="button" class="header-attach-btn ${count?'has-files':''}" title="${canManage ? 'Загрузить файл к поручению' : 'Прикреплённые файлы'}"
-      onclick="event.stopPropagation(); ${clickAction}">${label}</button>
+    <input type="file" id="hforder-${cssId(order.id)}" style="display:none" onclick="event.stopPropagation()" onchange="uploadOrderFile('${order.id}')">
+    <button type="button" class="header-attach-btn" title="Прикрепить файл приказа" onclick="event.stopPropagation(); document.getElementById('hforder-${cssId(order.id)}').click()">📄 Прикрепить приказ</button>
   </span>`;
+}
+
+async function uploadOrderFile(orderId){
+  const input = document.getElementById('hforder-'+cssId(orderId));
+  const file = input.files[0];
+  if(!file) return;
+  const order = orders.find(o=>o.id===orderId);
+  const extMatch = file.name.match(/\.[^.]+$/);
+  const ext = extMatch ? extMatch[0] : '';
+  const safeName = file.name
+    .replace(ext, '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .slice(0, 60) || 'file';
+  const path = `${cssId(orderId)}/order-doc/${Date.now()}_${safeName}${ext}`;
+  const { error: upErr } = await sb.storage.from('attachments').upload(path, file);
+  if(upErr){ alert('Не удалось загрузить файл: ' + upErr.message); return; }
+  const oldPath = order.order_file_path;
+  const { error: updErr } = await sb.from('orders').update({ order_file_name: file.name, order_file_path: path }).eq('id', orderId);
+  if(updErr){ alert('Не удалось сохранить файл: ' + updErr.message); return; }
+  if(oldPath) await sb.storage.from('attachments').remove([oldPath]);
+  await loadAll();
+}
+
+async function removeOrderFile(orderId){
+  if(!confirm('Удалить файл приказа с этого поручения?')) return;
+  const order = orders.find(o=>o.id===orderId);
+  const path = order.order_file_path;
+  const { error } = await sb.from('orders').update({ order_file_name: null, order_file_path: null }).eq('id', orderId);
+  if(error){ alert('Не удалось удалить: ' + error.message); return; }
+  if(path) await sb.storage.from('attachments').remove([path]);
+  await loadAll();
 }
 
 function renderAttachments(order){
@@ -507,17 +546,6 @@ async function uploadFile(orderId){
   errEl.textContent = 'Загрузка…';
   const { error } = await performUpload(orderId, file);
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
-  await loadAll();
-  toggleOrder(orderId);
-}
-
-// Быстрая загрузка прямо из заголовка (без раскрытия карточки)
-async function uploadFileFromHeader(orderId){
-  const input = document.getElementById('hfile-'+cssId(orderId));
-  const file = input.files[0];
-  if(!file) return;
-  const { error } = await performUpload(orderId, file);
-  if(error){ alert('Не удалось загрузить файл: ' + error.message); return; }
   await loadAll();
   toggleOrder(orderId);
 }
