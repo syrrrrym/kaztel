@@ -64,7 +64,11 @@
   .seal.overdue{border-color:var(--overdue);} .seal.overdue .pct{color:var(--overdue);}
   .seal.progress .pct{color:var(--progress);}
   .order-head-main{flex:1;min-width:0;}
+  .order-num-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .order-num{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--gold);}
+  .header-attach-btn{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-family:'IBM Plex Mono',monospace;background:var(--paper);border:1px solid var(--line);color:var(--ink-soft);padding:2px 8px;border-radius:12px;line-height:1.6;}
+  .header-attach-btn:hover{border-color:var(--gold);color:var(--ink);}
+  .header-attach-btn.has-files{color:var(--ink);border-color:var(--line);background:#fff;}
   .order-title{font-family:'IBM Plex Serif',serif;font-size:15.5px;margin:3px 0 6px;font-weight:600;}
   .order-meta{font-size:12px;color:var(--ink-soft);display:flex;gap:14px;flex-wrap:wrap;}
   .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;text-transform:uppercase;padding:3px 9px;border-radius:2px;font-weight:600;}
@@ -114,7 +118,7 @@
   .btn-secondary{padding:9px 14px;background:var(--paper-raised);border:1px solid var(--line);font-size:12.5px;color:var(--ink);}
   .btn-danger{padding:9px 14px;background:transparent;border:1px solid var(--overdue);color:var(--overdue);font-size:12.5px;}
   .btn-secondary.small,.btn-danger.small{padding:6px 10px;font-size:11px;}
-  .admin-row{display:flex;gap:8px;justify-content:flex-end;padding:14px 0 2px;}
+  .admin-row{display:flex;gap:8px;justify-content:flex-end;padding:14px 0 2px;flex-wrap:wrap;}
   .item-delete{background:transparent;border:none;color:var(--overdue);font-size:16px;padding:4px 6px;line-height:1;}
   .modal-overlay{display:none;position:fixed;inset:0;background:rgba(22,33,60,.55);align-items:center;justify-content:center;padding:20px;z-index:60;}
   .modal-overlay.open{display:flex;}
@@ -210,8 +214,8 @@ let history = [];
 let activeFilter = 'all';
 let searchTerm = '';
 
-function fmtDate(iso){ return new Date(iso).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}); }
-function fmtDateTime(iso){ const d=new Date(iso); return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(iso){ if(!iso) return null; return new Date(iso).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+function fmtDateTime(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
 function today(){ return new Date(); }
 function daysBetween(a,b){ return Math.round((b-a)/(1000*60*60*24)); }
 function userName(id){ return profilesById[id] ? profilesById[id].full_name : '—'; }
@@ -287,7 +291,7 @@ async function loadAll(){
 
 function itemStatus(item){
   if(item.progress >= 100) return 'done';
-  if(today() > new Date(item.deadline)) return 'overdue';
+  if(item.deadline && today() > new Date(item.deadline)) return 'overdue';
   return 'progress';
 }
 function orderStatus(order){
@@ -356,7 +360,10 @@ function renderOrders(){
       <div class="order-head" onclick="toggleOrder('${order.id}')">
         <div class="seal ${status}"><div class="pct">${prog}%</div><div class="pctlabel">готово</div></div>
         <div class="order-head-main">
-          <div class="order-num">№ ${order.id} · протокол от ${fmtDate(order.issued)}</div>
+          <div class="order-num-row">
+            <div class="order-num">№ ${order.id}${order.issued ? ' · протокол от ' + fmtDate(order.issued) : ''}</div>
+            ${renderHeaderAttach(order)}
+          </div>
           ${periodLine}
           <div class="order-title">${order.title}</div>
           <div class="order-meta"><span class="badge ${status}">${label}</span></div>
@@ -400,7 +407,7 @@ function renderItem(item, order, num){
       <div class="item-deadline">
         ${editable
           ? `<div class="date-edit-row"><input type="date" value="${item.date_from||''}" id="datefrom-${item.id}" title="с"><input type="date" value="${item.deadline||''}" id="dateto-${item.id}" title="до"></div>`
-          : `${item.date_from ? 'с '+fmtDate(item.date_from)+' ' : ''}до ${fmtDate(item.deadline)}`
+          : `${item.date_from ? 'с '+fmtDate(item.date_from)+' ' : ''}${item.deadline ? 'до '+fmtDate(item.deadline) : 'срок не указан'}`
         }
       </div>
       <div class="item-edit">
@@ -433,6 +440,22 @@ function fileIcon(name){
   return '📎';
 }
 
+// ---- Значок с файлами прямо в свёрнутом заголовке поручения ----
+function renderHeaderAttach(order){
+  const count = (order.attachments || []).length;
+  const canManage = canManageFiles(order);
+  if(!canManage && count === 0) return '';
+  const label = canManage ? (count ? `📎 ${count}` : '📎 Загрузить') : `📎 ${count}`;
+  const clickAction = canManage
+    ? `document.getElementById('hfile-${cssId(order.id)}').click()`
+    : `toggleOrder('${order.id}')`;
+  return `<span>
+    ${canManage ? `<input type="file" id="hfile-${cssId(order.id)}" style="display:none" onclick="event.stopPropagation()" onchange="uploadFileFromHeader('${order.id}')">` : ''}
+    <button type="button" class="header-attach-btn ${count?'has-files':''}" title="${canManage ? 'Загрузить файл к поручению' : 'Прикреплённые файлы'}"
+      onclick="event.stopPropagation(); ${clickAction}">${label}</button>
+  </span>`;
+}
+
 function renderAttachments(order){
   const files = order.attachments || [];
   const canManage = canManageFiles(order);
@@ -457,29 +480,44 @@ function renderAttachments(order){
   </div>`;
 }
 
+// Общая логика загрузки файла в Storage + запись в таблицу attachments
+async function performUpload(orderId, file){
+  const extMatch = file.name.match(/\.[^.]+$/);
+  const ext = extMatch ? extMatch[0] : '';
+  const safeName = file.name
+    .replace(ext, '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .slice(0, 60) || 'file';
+  const path = `${cssId(orderId)}/${Date.now()}_${safeName}${ext}`;
+  const { error: upErr } = await sb.storage.from('attachments').upload(path, file);
+  if(upErr) return { error: upErr };
+  const { error: insErr } = await sb.from('attachments').insert({
+    order_id: orderId, file_name: file.name, file_path: path, uploaded_by: currentProfile.id
+  });
+  if(insErr) return { error: insErr };
+  return { error: null };
+}
+
 async function uploadFile(orderId){
   const input = document.getElementById('file-inp-'+cssId(orderId));
   const errEl = document.getElementById('file-err-'+cssId(orderId));
   const file = input.files[0];
   if(!file){ errEl.textContent = 'Выберите файл.'; return; }
   errEl.textContent = 'Загрузка…';
+  const { error } = await performUpload(orderId, file);
+  if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
+  await loadAll();
+  toggleOrder(orderId);
+}
 
-  // "очищаем" имя файла для ключа Storage: только латиница/цифры/точки/дефисы
-  const extMatch = file.name.match(/\.[^.]+$/);
-  const ext = extMatch ? extMatch[0] : '';
-  const safeName = file.name
-    .replace(ext, '')
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '') // убрать диакритику, если есть
-    .replace(/[^a-zA-Z0-9_-]+/g, '_')                  // всё остальное (кириллица, пробелы) -> "_"
-    .slice(0, 60) || 'file';
-
-  const path = `${cssId(orderId)}/${Date.now()}_${safeName}${ext}`;
-  const { error: upErr } = await sb.storage.from('attachments').upload(path, file);
-  if(upErr){ errEl.textContent = 'Ошибка: ' + upErr.message; return; }
-  const { error: insErr } = await sb.from('attachments').insert({
-    order_id: orderId, file_name: file.name, file_path: path, uploaded_by: currentProfile.id
-  });
-  if(insErr){ errEl.textContent = 'Ошибка: ' + insErr.message; return; }
+// Быстрая загрузка прямо из заголовка (без раскрытия карточки)
+async function uploadFileFromHeader(orderId){
+  const input = document.getElementById('hfile-'+cssId(orderId));
+  const file = input.files[0];
+  if(!file) return;
+  const { error } = await performUpload(orderId, file);
+  if(error){ alert('Не удалось загрузить файл: ' + error.message); return; }
   await loadAll();
   toggleOrder(orderId);
 }
@@ -512,7 +550,7 @@ async function saveProgress(orderId, itemId){
   const newNotes = notesInput ? notesInput.value : (item.execution_notes || '');
   const oldNotes = item.execution_notes || '';
   const newDateFrom = dateFromInput ? (dateFromInput.value || null) : (item.date_from || null);
-  const newDeadline = dateToInput ? (dateToInput.value || item.deadline) : item.deadline;
+  const newDeadline = dateToInput ? (dateToInput.value || null) : item.deadline;
   const oldDateFrom = item.date_from || null;
   if(val === item.progress && newNotes === oldNotes && newDateFrom === oldDateFrom && newDeadline === item.deadline) return;
 
@@ -564,7 +602,7 @@ function openOrderModal(){
     <h3>Новое поручение</h3>
     <div class="field"><label>Номер поручения</label><input id="new-order-id" placeholder="например 15/2026"></div>
     <div class="field"><label>Название / содержание</label><input id="new-order-title"></div>
-    <div class="field"><label>Дата протокола</label><input id="new-order-issued" type="date"></div>
+    <div class="field"><label>Дата протокола (необязательно)</label><input id="new-order-issued" type="date"></div>
     <div class="field"><label>Период исполнения — с (необязательно)</label><input id="new-order-datefrom" type="date"></div>
     <div class="field"><label>Период исполнения — по (необязательно)</label><input id="new-order-dateto" type="date"></div>
     <div class="modal-actions">
@@ -577,11 +615,11 @@ function openOrderModal(){
 async function submitNewOrder(){
   const id = document.getElementById('new-order-id').value.trim();
   const title = document.getElementById('new-order-title').value.trim();
-  const issued = document.getElementById('new-order-issued').value;
+  const issued = document.getElementById('new-order-issued').value || null;
   const date_from = document.getElementById('new-order-datefrom').value || null;
   const date_to = document.getElementById('new-order-dateto').value || null;
   const errEl = document.getElementById('order-modal-error');
-  if(!id || !title || !issued){ errEl.textContent = 'Заполните все поля.'; return; }
+  if(!id || !title){ errEl.textContent = 'Укажите хотя бы номер и название.'; return; }
   const { error } = await sb.from('orders').insert({ id, title, issued, date_from, date_to });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
   closeModal();
@@ -625,7 +663,7 @@ function openItemModal(orderId){
     <div class="field"><label>Текст пункта</label><input id="new-item-text"></div>
     <div class="field"><label>Ответственный (необязательно)</label><select id="new-item-resp"><option value="">— не назначен —</option>${options}</select></div>
     <div class="field"><label>Дата начала (необязательно)</label><input id="new-item-datefrom" type="date"></div>
-    <div class="field"><label>Срок исполнения — до</label><input id="new-item-deadline" type="date"></div>
+    <div class="field"><label>Срок исполнения — до (необязательно)</label><input id="new-item-deadline" type="date"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn-primary" style="width:auto" onclick="submitNewItem('${orderId}')">Добавить</button>
@@ -638,9 +676,9 @@ async function submitNewItem(orderId){
   const text = document.getElementById('new-item-text').value.trim();
   const responsible = document.getElementById('new-item-resp').value || null;
   const date_from = document.getElementById('new-item-datefrom').value || null;
-  const deadline = document.getElementById('new-item-deadline').value;
+  const deadline = document.getElementById('new-item-deadline').value || null;
   const errEl = document.getElementById('item-modal-error');
-  if(!id || !text || !deadline){ errEl.textContent = 'Заполните все поля.'; return; }
+  if(!id || !text){ errEl.textContent = 'Укажите код и текст пункта.'; return; }
   const { error } = await sb.from('items').insert({
     id, order_id: orderId, text, deadline, date_from, responsible, progress: 0, execution_notes: '',
     last_by: currentProfile.id, last_at: new Date().toISOString()
