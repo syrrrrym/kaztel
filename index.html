@@ -58,8 +58,8 @@
   .order{background:var(--paper-raised);border:1px solid var(--line);margin-bottom:14px;}
   .order-head{display:flex;align-items:center;gap:18px;padding:18px 20px;cursor:pointer;}
   .seal{width:54px;height:54px;border-radius:50%;border:2px solid var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;}
-  .seal .pct{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px;}
-  .seal .pctlabel{font-size:8px;color:var(--ink-soft);}
+  .seal .pct{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:22px;line-height:1;}
+  .seal .pctlabel{display:none;}
   .seal.done{border-color:var(--done);} .seal.done .pct{color:var(--done);}
   .seal.overdue{border-color:var(--overdue);} .seal.overdue .pct{color:var(--overdue);}
   .seal.progress .pct{color:var(--progress);}
@@ -84,8 +84,11 @@
   .item:last-child{border-bottom:none;}
   .item-row{display:grid;grid-template-columns:1fr 130px 140px 150px;gap:14px;align-items:center;}
   .item-check{display:flex;align-items:center;}
-  .check-label{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;}
-  .check-label input[type=checkbox]{width:18px;height:18px;accent-color:var(--done);cursor:pointer;}
+  .status-toggle{width:100%;padding:11px 10px;border-radius:6px;border:1.5px solid var(--line);background:#fff;font-size:12.5px;font-weight:700;letter-spacing:.02em;text-align:center;transition:.15s;}
+  .status-toggle.done{background:var(--done-soft);border-color:var(--done);color:var(--done);}
+  .status-toggle.todo{background:var(--paper);border-color:var(--line);color:var(--ink-soft);}
+  .status-toggle:disabled{opacity:.5;cursor:not-allowed;}
+  .status-toggle:not(:disabled):hover{border-color:var(--gold);}
   .item-text{font-size:13.5px;line-height:1.4;}
   .item-num{font-weight:600;color:var(--gold);font-family:'IBM Plex Mono',monospace;}
   .item-sub{font-size:11.5px;color:var(--ink-soft);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
@@ -351,7 +354,8 @@ function renderOrders(){
   });
   if(filtered.length===0){ list.innerHTML = '<div class="empty-note">По заданным условиям поручений не найдено.</div>'; return; }
   list.innerHTML = filtered.map(order=>{
-    const status = orderStatus(order); const prog = orderProgress(order);
+    const status = orderStatus(order);
+    const statusIcon = status==='done' ? '✓' : status==='overdue' ? '!' : '•';
     const label = status==='done'?'Исполнено':status==='overdue'?'Просрочено':'В работе';
     const items = [...(order.items||[])].sort((a,b)=>a.id.localeCompare(b.id));
     const periodLine = (order.date_from || order.date_to)
@@ -359,7 +363,7 @@ function renderOrders(){
       : '';
     return `<div class="order" id="order-${cssId(order.id)}">
       <div class="order-head" onclick="toggleOrder('${order.id}')">
-        <div class="seal ${status}"><div class="pct">${prog}%</div><div class="pctlabel">готово</div></div>
+        <div class="seal ${status}"><div class="pct">${statusIcon}</div></div>
         <div class="order-head-main">
           <div class="order-num-row">
             <div class="order-num">№ ${order.id}${order.issued ? ' · протокол от ' + fmtDate(order.issued) : ''}</div>
@@ -400,10 +404,8 @@ function renderItem(item, order, num){
         </div>
       </div>
       <div class="item-check">
-        <label class="check-label">
-          <input type="checkbox" id="chk-${item.id}" ${isDone?'checked':''} ${editable?'':'disabled'}>
-          <span>${isDone ? 'Исполнено' : 'Не исполнено'}</span>
-        </label>
+        <button type="button" class="status-toggle ${isDone?'done':'todo'}" ${editable?'':'disabled'}
+          onclick="toggleDone('${order.id}','${item.id}')">${isDone ? '✓ Исполнено' : 'Не исполнено'}</button>
       </div>
       <div class="item-deadline">
         ${editable
@@ -412,7 +414,7 @@ function renderItem(item, order, num){
         }
       </div>
       <div class="item-edit">
-        ${editable ? `<button onclick="saveProgress('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">войдите, чтобы отмечать</div>`}
+        ${editable ? `<button onclick="saveDetails('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">войдите, чтобы отмечать</div>`}
         ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
       </div>
     </div>
@@ -459,7 +461,7 @@ function renderHeaderOrderFile(order){
   }
   return `<span>
     <input type="file" id="hforder-${cssId(order.id)}" style="display:none" onclick="event.stopPropagation()" onchange="uploadOrderFile('${order.id}')">
-    <button type="button" class="header-attach-btn" title="Прикрепить файл приказа" onclick="event.stopPropagation(); document.getElementById('hforder-${cssId(order.id)}').click()">📄 Прикрепить файл</button>
+    <button type="button" class="header-attach-btn" title="Прикрепить файл приказа" onclick="event.stopPropagation(); document.getElementById('hforder-${cssId(order.id)}').click()">📄 Прикрепить приказ</button>
   </span>`;
 }
 
@@ -567,36 +569,47 @@ async function deleteFile(attachmentId, path){
 
 function toggleOrder(id){ document.getElementById('order-'+cssId(id)).classList.toggle('open'); }
 
-async function saveProgress(orderId, itemId){
+// Мгновенное переключение статуса пункта — сохраняется сразу по клику
+async function toggleDone(orderId, itemId){
   const order = orders.find(o=>o.id===orderId);
   const item = order.items.find(i=>i.id===itemId);
-  const checkbox = document.getElementById('chk-'+itemId);
+  const oldVal = item.progress;
+  const newVal = oldVal >= 100 ? 0 : 100;
+  const nowIso = new Date().toISOString();
+
+  const { error: updErr } = await sb.from('items').update({
+    progress: newVal, last_by: currentProfile.id, last_at: nowIso
+  }).eq('id', itemId);
+  if(updErr){ alert('Не удалось сохранить: ' + updErr.message); return; }
+
+  await sb.from('history').insert({
+    user_id: currentProfile.id, order_id: orderId, item_id: itemId,
+    item_text: item.text, from_progress: oldVal, to_progress: newVal
+  });
+
+  await loadAll();
+  toggleOrder(orderId);
+}
+
+// Сохранение комментария "Исполнение" и дат — по кнопке «Сохранить»
+async function saveDetails(orderId, itemId){
+  const order = orders.find(o=>o.id===orderId);
+  const item = order.items.find(i=>i.id===itemId);
   const notesInput = document.getElementById('exec-'+itemId);
   const dateFromInput = document.getElementById('datefrom-'+itemId);
   const dateToInput = document.getElementById('dateto-'+itemId);
-  const val = checkbox.checked ? 100 : 0;
   const newNotes = notesInput ? notesInput.value : (item.execution_notes || '');
   const oldNotes = item.execution_notes || '';
   const newDateFrom = dateFromInput ? (dateFromInput.value || null) : (item.date_from || null);
   const newDeadline = dateToInput ? (dateToInput.value || null) : item.deadline;
   const oldDateFrom = item.date_from || null;
-  if(val === item.progress && newNotes === oldNotes && newDateFrom === oldDateFrom && newDeadline === item.deadline) return;
-
-  const oldVal = item.progress;
-  const nowIso = new Date().toISOString();
+  if(newNotes === oldNotes && newDateFrom === oldDateFrom && newDeadline === item.deadline) return;
 
   const { error: updErr } = await sb.from('items').update({
-    progress: val, execution_notes: newNotes, date_from: newDateFrom, deadline: newDeadline,
-    last_by: currentProfile.id, last_at: nowIso
+    execution_notes: newNotes, date_from: newDateFrom, deadline: newDeadline,
+    last_by: currentProfile.id, last_at: new Date().toISOString()
   }).eq('id', itemId);
   if(updErr){ alert('Не удалось сохранить: ' + updErr.message); return; }
-
-  if(val !== oldVal){
-    await sb.from('history').insert({
-      user_id: currentProfile.id, order_id: orderId, item_id: itemId,
-      item_text: item.text, from_progress: oldVal, to_progress: val
-    });
-  }
 
   await loadAll();
   toggleOrder(orderId);
