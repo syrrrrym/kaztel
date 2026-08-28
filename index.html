@@ -379,7 +379,7 @@ function renderOrders(){
         ${items.map((i,idx)=>renderItem(i, order, idx+1)).join('') || '<div class="empty-note">Пунктов пока нет.</div>'}
         ${renderAttachments(order)}
         ${isAdmin() ? `<div class="admin-row">
-          <button class="btn-secondary small" onclick="event.stopPropagation();openEditOrderDatesModal('${order.id}')">Изменить срок поручения</button>
+          <button class="btn-secondary small" onclick="event.stopPropagation();openEditOrderModal('${order.id}')">Изменить поручение</button>
           <button class="btn-secondary small" onclick="event.stopPropagation();openItemModal('${order.id}')">+ Добавить пункт</button>
           <button class="btn-danger small" onclick="event.stopPropagation();deleteOrder('${order.id}')">Удалить поручение</button>
         </div>` : ''}
@@ -450,18 +450,18 @@ function renderHeaderOrderFile(order){
   if(!hasFile && !canManage) return '';
   if(hasFile){
     return `<span class="header-order-file">
-      <button type="button" class="header-attach-btn has-files" title="Скачать протокол: ${escAttr(order.order_file_name)}"
+      <button type="button" class="header-attach-btn has-files" title="Скачать приказ: ${escAttr(order.order_file_name)}"
         onclick="event.stopPropagation(); downloadFile('${escAttr(order.order_file_path)}','${escAttr(order.order_file_name).replace(/'/g,"\\'")}')">📄 ${escHtml(order.order_file_name)}</button>
       ${canManage ? `
         <input type="file" id="hforder-${cssId(order.id)}" style="display:none" onclick="event.stopPropagation()" onchange="uploadOrderFile('${order.id}')">
         <button type="button" class="header-attach-btn" title="Заменить файл" onclick="event.stopPropagation(); document.getElementById('hforder-${cssId(order.id)}').click()">⟳</button>
-        <button type="button" class="header-attach-btn" title="Удалить файл протокола" onclick="event.stopPropagation(); removeOrderFile('${order.id}')">✕</button>
+        <button type="button" class="header-attach-btn" title="Удалить файл приказа" onclick="event.stopPropagation(); removeOrderFile('${order.id}')">✕</button>
       ` : ''}
     </span>`;
   }
   return `<span>
     <input type="file" id="hforder-${cssId(order.id)}" style="display:none" onclick="event.stopPropagation()" onchange="uploadOrderFile('${order.id}')">
-    <button type="button" class="header-attach-btn" title="Прикрепить файл протокола" onclick="event.stopPropagation(); document.getElementById('hforder-${cssId(order.id)}').click()">📄 Прикрепить протокол</button>
+    <button type="button" class="header-attach-btn" title="Прикрепить файл приказа" onclick="event.stopPropagation(); document.getElementById('hforder-${cssId(order.id)}').click()">📄 Прикрепить приказ</button>
   </span>`;
 }
 
@@ -488,7 +488,7 @@ async function uploadOrderFile(orderId){
 }
 
 async function removeOrderFile(orderId){
-  if(!confirm('Удалить файл протокола с этого поручения?')) return;
+  if(!confirm('Удалить файл приказа с этого поручения?')) return;
   const order = orders.find(o=>o.id===orderId);
   const path = order.order_file_path;
   const { error } = await sb.from('orders').update({ order_file_name: null, order_file_path: null }).eq('id', orderId);
@@ -667,25 +667,62 @@ async function submitNewOrder(){
   await loadAll();
 }
 
-function openEditOrderDatesModal(orderId){
+function openEditOrderModal(orderId){
   const order = orders.find(o=>o.id===orderId);
   openModal(`
-    <h3>Срок поручения № ${orderId}</h3>
+    <h3>Изменить поручение</h3>
+    <div class="field"><label>Номер поручения</label><input id="edit-order-id" value="${escAttr(order.id)}"></div>
+    <div class="modal-hint">Если поменять номер — все пункты, история и файлы автоматически перенесутся на новый номер.</div>
+    <div class="field"><label>Название / содержание</label><input id="edit-order-title" value="${escAttr(order.title)}"></div>
+    <div class="field"><label>Дата протокола (необязательно)</label><input id="edit-order-issued" type="date" value="${order.issued||''}"></div>
     <div class="field"><label>Период исполнения — с (необязательно)</label><input id="edit-order-datefrom" type="date" value="${order.date_from||''}"></div>
     <div class="field"><label>Период исполнения — по (необязательно)</label><input id="edit-order-dateto" type="date" value="${order.date_to||''}"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
-      <button class="btn-primary" style="width:auto" onclick="submitEditOrderDates('${orderId}')">Сохранить</button>
+      <button class="btn-primary" style="width:auto" onclick="submitEditOrder('${orderId}')">Сохранить</button>
     </div>
-    <div class="modal-error" id="edit-order-dates-error"></div>
+    <div class="modal-error" id="edit-order-error"></div>
   `);
 }
-async function submitEditOrderDates(orderId){
+async function submitEditOrder(oldId){
+  const newId = document.getElementById('edit-order-id').value.trim();
+  const title = document.getElementById('edit-order-title').value.trim();
+  const issued = document.getElementById('edit-order-issued').value || null;
   const date_from = document.getElementById('edit-order-datefrom').value || null;
   const date_to = document.getElementById('edit-order-dateto').value || null;
-  const errEl = document.getElementById('edit-order-dates-error');
-  const { error } = await sb.from('orders').update({ date_from, date_to }).eq('id', orderId);
-  if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
+  const errEl = document.getElementById('edit-order-error');
+  if(!newId || !title){ errEl.textContent = 'Укажите номер и название.'; return; }
+
+  const order = orders.find(o=>o.id===oldId);
+
+  if(newId === oldId){
+    const { error } = await sb.from('orders').update({ title, issued, date_from, date_to }).eq('id', oldId);
+    if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
+    closeModal();
+    await loadAll();
+    return;
+  }
+
+  // Номер меняется — переносим все связанные записи на новый номер.
+  errEl.textContent = 'Сохранение…';
+  const { data: existing } = await sb.from('orders').select('id').eq('id', newId).maybeSingle();
+  if(existing){ errEl.textContent = 'Поручение с таким номером уже существует.'; return; }
+
+  const { error: insErr } = await sb.from('orders').insert({
+    id: newId, title, issued, date_from, date_to,
+    order_file_name: order.order_file_name || null, order_file_path: order.order_file_path || null
+  });
+  if(insErr){ errEl.textContent = 'Ошибка: ' + insErr.message; return; }
+
+  for(const it of (order.items||[])){
+    await sb.from('items').update({ order_id: newId }).eq('id', it.id);
+  }
+  await sb.from('history').update({ order_id: newId }).eq('order_id', oldId);
+  for(const f of (order.attachments||[])){
+    await sb.from('attachments').update({ order_id: newId }).eq('id', f.id);
+  }
+  await sb.from('orders').delete().eq('id', oldId);
+
   closeModal();
   await loadAll();
 }
