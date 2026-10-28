@@ -146,7 +146,13 @@
     .h-entry{flex-direction:column;gap:2px;} .h-date{width:auto;} .h-user{width:auto;}
   }
 </style>
-</head>
+<script src="/vendor/exceljs.min.js"></script>
+<style>
+.tabs-row{display:flex;flex-wrap:wrap}.stats-row{flex-wrap:wrap}.badge.inactive{background:#edf0f3;color:#586273}
+.source-details{margin:12px 0;padding:14px;background:#f6f7f9;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.6}
+.pk-select{padding:8px;border:1px solid var(--line);border-radius:6px;background:white;color:var(--ink)}
+.toolbar{flex-wrap:wrap}.toolbar-left{flex-wrap:wrap}.export-note{font-size:12px;color:var(--ink-soft);margin:0 0 12px}
+</style></head>
 <body>
 
 <div id="login-screen">
@@ -175,7 +181,8 @@
   <main>
     <div class="stats-row" id="stats-row"></div>
     <div class="tabs-row" id="tabs-row">
-      <button class="tab-btn active" data-tab="orders" onclick="switchTab('orders')">Поручения</button>
+      <button class="tab-btn active" data-tab="orders" onclick="switchTab('orders')">Поручения СД</button>
+      <button class="tab-btn" data-tab="pk" onclick="switchTab('pk')">Поручения ПК</button>
       <button class="tab-btn" data-tab="history" onclick="switchTab('history')">История изменений</button>
     </div>
     <div id="tab-orders">
@@ -184,11 +191,14 @@
           <button class="chip-toggle active" id="filter-all" onclick="setFilter('all')">Все</button>
           <button class="chip-toggle" id="filter-overdue" onclick="setFilter('overdue')">Просроченные</button>
           <button class="chip-toggle" id="filter-progress" onclick="setFilter('progress')">В работе</button>
-          <button class="chip-toggle" id="filter-done" onclick="setFilter('done')">Исполненные</button>
+          <button class="chip-toggle" id="filter-done" onclick="setFilter('done')">Исполненные</button><button class="chip-toggle" id="filter-inactive" style="display:none" onclick="setFilter('inactive')">Без отдельного исполнения</button>
         </div>
-        <input class="search-input" placeholder="Поиск по названию…" oninput="setSearch(this.value)">
+        <select class="pk-select" id="pk-kind" aria-label="Источник поручений ПК" style="display:none" onchange="setPkKind(this.value)"><option value="all">Все источники ПК</option><option value="decisions">Поручения и решения ПК</option><option value="post">Пост-мониторинг</option></select>
+        <select class="pk-select" id="pk-year" aria-label="Год поручений ПК" style="display:none" onchange="setPkYear(this.value)"><option value="all">Все годы</option></select>
+        <button class="btn-secondary" id="export-btn" onclick="exportOrders()">Скачать Excel</button>
+        <input class="search-input" aria-label="Поиск поручений" placeholder="Поиск по номеру, тексту, ответственному…" oninput="setSearch(this.value)">
       </div>
-      <div id="orders-list">Загрузка…</div>
+      <p class="export-note" id="export-note">В Excel попадут поручения с учётом выбранных фильтров и поиска.</p><div id="orders-list">Загрузка…</div><div id="orders-pagination" class="toolbar"></div>
     </div>
     <div id="tab-history" style="display:none">
       <section class="title-row"><h2>История изменений</h2><span class="count" id="history-count"></span></section>
@@ -205,6 +215,7 @@
   <div class="modal-box" id="modal-body"></div>
 </div>
 
+<script src="/registry.js"></script>
 <script>
 // ===== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К SUPABASE =====
 const SUPABASE_URL = 'https://khbuercwgwxybsyznvlt.supabase.co';
@@ -217,6 +228,13 @@ let orders = [];
 let history = [];
 let activeFilter = 'all';
 let searchTerm = '';
+let activeRegistry = 'sd';
+let activeTab = 'orders';
+let pkKind = 'all';
+let pkYear = 'all';
+let registryLoadError = false;
+let ordersPage=1;
+const pageSize=30;
 
 function fmtDate(iso){ if(!iso) return null; return new Date(iso).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 function fmtDateTime(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
@@ -224,7 +242,7 @@ function today(){ return new Date(); }
 function daysBetween(a,b){ return Math.round((b-a)/(1000*60*60*24)); }
 function userName(id){ return profilesById[id] ? profilesById[id].full_name : '—'; }
 function isAdmin(){ return !!(currentProfile && currentProfile.role === 'admin'); }
-function escAttr(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
+function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 async function attemptLogin(){
@@ -280,28 +298,48 @@ sb.auth.onAuthStateChange((event, session) => {
   if(session) await afterLogin();
 })();
 
+async function fetchPages(table, select, sort, descending=false){
+  const rows=[];
+  for(let offset=0;;offset+=500){
+    const {data,error}=await sb.from(table).select(select).order(sort,{ascending:!descending}).range(offset,offset+499);
+    if(error) throw error;
+    rows.push(...data);
+    if(data.length<500) return rows;
+  }
+}
 async function loadAll(){
-  const [{data: profiles}, {data: ordersData}, {data: historyData}] = await Promise.all([
-    sb.from('profiles').select('*'),
-    sb.from('orders').select('*, items(*), attachments(*)').order('id'),
-    sb.from('history').select('*').order('ts', {ascending:false})
-  ]);
-  profilesById = {};
-  (profiles||[]).forEach(p => profilesById[p.id] = p);
-  orders = ordersData || [];
-  history = historyData || [];
-  renderAll();
+  try {
+    const [profiles, ordersData, historyData] = await Promise.all([
+      fetchPages('profiles','*','id'),
+      fetchPages('orders','*, items(*), attachments(*)','id'),
+      fetchPages('history','*','ts',true)
+    ]);
+    profilesById = Object.fromEntries(profiles.map(p=>[p.id,p]));
+    orders = ordersData;
+    history = historyData;
+    registryLoadError = false;
+    document.getElementById('export-btn').disabled=false;
+    refreshYearOptions();
+    renderAll();
+  } catch(error) {
+    registryLoadError = true;
+    document.getElementById('export-btn').disabled=true;
+    document.getElementById('orders-list').innerHTML='<div class="empty-note">Не удалось загрузить реестр. Обновите страницу и повторите попытку.</div>';
+    console.error('Registry load failed:',error.message);
+  }
 }
 
 function itemStatus(item){
   if(item.progress >= 100) return 'done';
+  if(item.source_status) return 'inactive';
   if(item.deadline && today() > new Date(item.deadline)) return 'overdue';
   return 'progress';
 }
 function orderStatus(order){
   if(!order.items || order.items.length === 0) return 'progress';
   const st = order.items.map(itemStatus);
-  const overallDone = st.every(s=>s==='done');
+  if(st.every(s=>s==='inactive')) return 'inactive';
+  const overallDone = st.every(s=>s==='done'||s==='inactive');
   const orderOverdue = order.date_to && !overallDone && today() > new Date(order.date_to);
   if(st.includes('overdue') || orderOverdue) return 'overdue';
   if(overallDone) return 'done';
@@ -317,65 +355,80 @@ function canEdit(item, order){
 }
 
 function switchTab(tab){
+  activeTab=tab;
+  const registryTab=tab==='orders'||tab==='pk';
+  if(registryTab) activeRegistry=tab==='pk'?'pk':'sd';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
-  document.getElementById('tab-orders').style.display = tab==='orders' ? 'block':'none';
-  document.getElementById('tab-history').style.display = tab==='history' ? 'block':'none';
-  const usersTab = document.getElementById('tab-users');
-  if(usersTab) usersTab.style.display = tab==='users' ? 'block':'none';
+  document.getElementById('tab-orders').style.display=registryTab?'block':'none';
+  document.getElementById('tab-history').style.display=tab==='history'?'block':'none';
+  document.getElementById('tab-users').style.display=tab==='users'?'block':'none';
+  document.getElementById('stats-row').style.display=registryTab?'':'none';
+  ['pk-kind','pk-year','filter-inactive'].forEach(id=>document.getElementById(id).style.display=activeRegistry==='pk'?'':'none');
+  document.querySelector('.masthead h1').textContent=activeRegistry==='pk'?'Поручения Проектного комитета':'Поручения Совета директоров';
+  document.querySelector('.emblem-small span').textContent=activeRegistry==='pk'?'ПК':'СД';
+  if(registryTab){
+    ordersPage=1;
+    if(activeRegistry==='sd'&&activeFilter==='inactive') setFilter('all');
+    renderAll();
+  }
   if(tab==='history') renderHistory();
-  if(tab==='users') renderUsers();
+  if(tab==='users'&&isAdmin()) renderUsers();
 }
+
 function setFilter(f){
-  activeFilter = f;
-  ['all','overdue','progress','done'].forEach(k=>document.getElementById('filter-'+k).classList.toggle('active', k===f));
+  activeFilter = f; ordersPage=1;
+  ['all','overdue','progress','done','inactive'].forEach(k=>document.getElementById('filter-'+k).classList.toggle('active', k===f));
   renderOrders();
 }
-function setSearch(v){ searchTerm = v.toLowerCase(); renderOrders(); }
+function setSearch(v){ ordersPage=1; searchTerm = v.toLowerCase(); renderOrders(); }
 
 function renderStats(){
-  const total = orders.length;
-  const done = orders.filter(o=>orderStatus(o)==='done').length;
-  const overdue = orders.filter(o=>orderStatus(o)==='overdue').length;
+  const scoped = scopedOrders();
+  const total = scoped.length;
+  const inactive = scoped.filter(o=>orderStatus(o)==='inactive').length;
+  const done = scoped.filter(o=>orderStatus(o)==='done').length;
+  const overdue = scoped.filter(o=>orderStatus(o)==='overdue').length;
   document.getElementById('stats-row').innerHTML = `
     <div class="stat"><div class="n">${total}</div><div class="l">Всего поручений</div></div>
     <div class="stat done"><div class="n">${done}</div><div class="l">Исполнено полностью</div></div>
-    <div class="stat"><div class="n">${total-done-overdue}</div><div class="l">В работе, без просрочек</div></div>
-    <div class="stat overdue"><div class="n">${overdue}</div><div class="l">С просроченными пунктами</div></div>`;
+    <div class="stat"><div class="n">${total-done-overdue-inactive}</div><div class="l">${activeRegistry==='pk'?'В работе':'В работе, без просрочек'}</div></div>
+    <div class="stat overdue"><div class="n">${overdue}</div><div class="l">С просроченными пунктами</div></div>${activeRegistry==='pk'?`<div class="stat"><div class="n">${inactive}</div><div class="l">Без отдельного исполнения</div></div>`:''}`;
 }
 
 function cssId(s){ return s.replace(/[^\w]/g,'_'); }
 
 function renderOrders(){
   const list = document.getElementById('orders-list');
-  let filtered = orders.filter(o=>{
-    if(activeFilter!=='all' && orderStatus(o)!==activeFilter) return false;
-    if(searchTerm && !o.title.toLowerCase().includes(searchTerm)) return false;
-    return true;
-  });
+  const matched = filteredOrders();
+  ordersPage=Math.max(1,Math.min(ordersPage,Math.ceil(matched.length/pageSize)||1));
+  const filtered = matched.slice((ordersPage-1)*pageSize,ordersPage*pageSize);
+  renderPagination(matched.length);
   if(filtered.length===0){ list.innerHTML = '<div class="empty-note">По заданным условиям поручений не найдено.</div>'; return; }
   list.innerHTML = filtered.map(order=>{
     const status = orderStatus(order);
     const statusIcon = status==='done' ? '✓' : status==='overdue' ? '!' : '•';
-    const label = status==='done'?'Исполнено':status==='overdue'?'Просрочено':'В работе';
+    const label = statusLabel(status);
     const items = [...(order.items||[])].sort((a,b)=>a.id.localeCompare(b.id));
     const periodLine = (order.date_from || order.date_to)
       ? `<div class="order-num" style="color:var(--ink-soft)">срок: ${order.date_from ? 'с '+fmtDate(order.date_from)+' ' : ''}${order.date_to ? 'по '+fmtDate(order.date_to) : ''}</div>`
-      : '';
+      : sourceField(order,'Новый срок исполнения') || sourceField(order,'Срок исполнения')
+        ? `<div class="order-num">Срок по источнику: ${escHtml(sourceField(order,'Новый срок исполнения') || sourceField(order,'Срок исполнения'))}</div>` : '';
     return `<div class="order" id="order-${cssId(order.id)}">
       <div class="order-head" onclick="toggleOrder('${order.id}')">
         <div class="seal ${status}"><div class="pct">${statusIcon}</div></div>
         <div class="order-head-main">
           <div class="order-num-row">
-            <div class="order-num">№ ${order.id}${order.issued ? ' · протокол от ' + fmtDate(order.issued) : ''}</div>
+            <div class="order-num">${escHtml(displayOrderNumber(order))}${order.issued ? ' · протокол от ' + fmtDate(order.issued) : ''}</div>
             ${renderHeaderOrderFile(order)}
           </div>
           ${periodLine}
-          <div class="order-title">${order.title}</div>
+          <div class="order-title">${escHtml(order.title)}</div>
           <div class="order-meta"><span class="badge ${status}">${label}</span></div>
         </div>
         <div class="chevron">›</div>
       </div>
       <div class="order-body">
+        ${renderSourceDetails(order)}
         ${items.map((i,idx)=>renderItem(i, order, idx+1)).join('') || '<div class="empty-note">Пунктов пока нет.</div>'}
         ${renderAttachments(order)}
         ${isAdmin() ? `<div class="admin-row">
@@ -397,8 +450,8 @@ function renderItem(item, order, num){
       <div>
         <div class="item-text"><span class="item-num">${num}.</span> ${escHtml(item.text)}</div>
         <div class="item-sub">
-          <span class="badge ${st}">${st==='done'?'Исполнено':st==='overdue'?'Просрочено':'В работе'}</span>
-          <span>Ответственный: ${userName(item.responsible)}</span>
+          <span class="badge ${st}">${escHtml(item.source_status || statusLabel(st))}</span>
+          <span>Ответственный: ${escHtml(item.responsible ? userName(item.responsible) : sourceField(order,'Ответственный') || '—')}</span>
           <span>обновлено: ${fmtDateTime(item.last_at)} · ${userName(item.last_by)}</span>
           ${stale ? '<span class="stale-flag">⏳ нет обновления &gt;7 дней</span>' : ''}
         </div>
@@ -578,7 +631,7 @@ async function toggleDone(orderId, itemId){
   const nowIso = new Date().toISOString();
 
   const { error: updErr } = await sb.from('items').update({
-    progress: newVal, last_by: currentProfile.id, last_at: nowIso
+    progress: newVal, source_status: null, last_by: currentProfile.id, last_at: nowIso
   }).eq('id', itemId);
   if(updErr){ alert('Не удалось сохранить: ' + updErr.message); return; }
 
@@ -661,7 +714,7 @@ async function submitNewOrder(){
   const date_to = document.getElementById('new-order-dateto').value || null;
   const errEl = document.getElementById('order-modal-error');
   if(!id || !title){ errEl.textContent = 'Укажите хотя бы номер и название.'; return; }
-  const { error } = await sb.from('orders').insert({ id, title, issued, date_from, date_to });
+  const { error } = await sb.from('orders').insert({ id, title, issued, date_from, date_to, category: activeRegistry });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
   closeModal();
   await loadAll();
@@ -709,7 +762,7 @@ async function submitEditOrder(oldId){
   if(existing){ errEl.textContent = 'Поручение с таким номером уже существует.'; return; }
 
   const { error: insErr } = await sb.from('orders').insert({
-    id: newId, title, issued, date_from, date_to,
+    id: newId, title, issued, date_from, date_to, category: order.category || 'sd', source_data: order.source_data || null,
     order_file_name: order.order_file_name || null, order_file_path: order.order_file_path || null
   });
   if(insErr){ errEl.textContent = 'Ошибка: ' + insErr.message; return; }
