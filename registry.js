@@ -3,9 +3,11 @@ function statusLabel(status) {
   return {done:'Исполнено',overdue:'Просрочено',progress:'В работе',inactive:'Без отдельного исполнения'}[status] || status;
 }
 function scopedOrders() {
-  return orders.filter(o => (o.category || 'sd') === activeRegistry &&
+  const scoped=orders.filter(o => (o.category || 'sd') === activeRegistry &&
     (activeRegistry !== 'pk' || ((pkKind==='all' || o.source_data?.kind===pkKind) &&
       (pkYear==='all' || String(o.source_data?.year || o.issued?.slice(0,4) || '')===pkYear))));
+  if(activeRegistry==='pk') scoped.sort((a,b)=>String(b.source_data?.year||'').localeCompare(String(a.source_data?.year||'')) || String(a.source_data?.kind||'').localeCompare(String(b.source_data?.kind||'')) || (a.source_data?.row||0)-(b.source_data?.row||0));
+  return scoped;
 }
 function filteredOrders() {
   return scopedOrders().filter(o => {
