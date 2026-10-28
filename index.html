@@ -148,7 +148,8 @@
 </style>
 <script src="/vendor/exceljs.min.js"></script>
 <style>
-.tabs-row{display:flex;flex-wrap:wrap}.stats-row{flex-wrap:wrap}.badge.inactive{background:#edf0f3;color:#586273}
+.tabs-row{display:flex;flex-wrap:wrap}.stats-row{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.badge.inactive{background:#edf0f3;color:#586273}
+@media(max-width:720px){.stats-row{grid-template-columns:repeat(2,minmax(0,1fr))}.stat:last-child:nth-child(odd){grid-column:1/-1}}
 .source-details{margin:12px 0;padding:14px;background:#f6f7f9;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.6}
 .pk-select{padding:8px;border:1px solid var(--line);border-radius:6px;background:white;color:var(--ink)}
 .toolbar{flex-wrap:wrap}.toolbar-left{flex-wrap:wrap}.export-note{font-size:12px;color:var(--ink-soft);margin:0 0 12px}
