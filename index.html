@@ -302,7 +302,9 @@ sb.auth.onAuthStateChange((event, session) => {
 async function fetchPages(table, select, sort, descending=false){
   const rows=[];
   for(let offset=0;;offset+=500){
-    const {data,error}=await sb.from(table).select(select).order(sort,{ascending:!descending}).range(offset,offset+499);
+    let query=sb.from(table).select(select);
+    if(table==='orders') query=query.in('category',['sd','pk']);
+    const {data,error}=await query.order(sort,{ascending:!descending}).range(offset,offset+499);
     if(error) throw error;
     rows.push(...data);
     if(data.length<500) return rows;
