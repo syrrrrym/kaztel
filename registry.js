@@ -41,9 +41,13 @@ function renderSourceDetails(order) {
   return `<details class="source-details"><summary>${kind} · ${escHtml(data.year)} · строка ${data.row} · исходные данные</summary>${fields.map(([k,v])=>`<div><b>${escHtml(k)}:</b> ${escHtml(v)}</div>`).join('')}${Object.entries(data.extra||{}).map(([k,v])=>`<div><b>${escHtml(k)}:</b> ${escHtml(v)}</div>`).join('')}</details>`;
 }
 function exportRows(selected) {
+  const excludedPkColumns=new Set([
+    'Дата','Наименование проекта / вопроса','Столбец N',
+    'Начало поручения (актуальное)','ID пункта','Ответственный (актуальный)'
+  ]);
   return selected.flatMap(order => (order.items?.length ? order.items : [null]).map(item=>{
     const fields=order.source_data?.fields || {};
-    return {
+    const row={
       'Реестр':(order.category||'sd')==='pk'?'ПК':'СД',
       'Источник':order.source_data ? (order.source_data.kind==='post'?'Пост-мониторинг':'Поручения и решения ПК') : '',
       'Год':order.source_data ? Number(order.source_data.year) : null,
@@ -65,6 +69,9 @@ function exportRows(selected) {
       'Изменил':item?.last_by ? userName(item.last_by) : '',
       'Файлы':[(order.order_file_name||''),...(order.attachments||[]).map(f=>f.file_name || f.name || '')].filter(Boolean).join('\n')
     };
+    return order.category==='pk'
+      ? Object.fromEntries(Object.entries(row).filter(([key])=>!excludedPkColumns.has(key)))
+      : row;
   }));
 }
 function excelDate(value) {
