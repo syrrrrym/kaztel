@@ -100,6 +100,18 @@
   .item-deadline{font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
   .date-edit-row{display:flex;flex-direction:column;gap:4px;}
   .date-edit-row input[type=date]{padding:4px 6px;border:1px solid var(--line);font-size:11px;font-family:'IBM Plex Mono',monospace;width:100%;}
+  .item-row{grid-template-columns:minmax(0,1fr) 130px;align-items:start;}
+  .item-deadline{grid-column:1/-1;font-family:inherit;}
+  .date-periods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+  .date-period{border:1px solid var(--line);border-radius:6px;padding:12px;margin:0;min-width:0;}
+  .date-period legend{font-size:13px;font-weight:600;padding:0 5px;}
+  .date-edit-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+  .date-edit-row label{font-size:12px;display:grid;gap:6px;}
+  .date-edit-row input[type=date]{font-size:13px;padding:8px;min-width:0;background:#fff;}
+  .item-edit{grid-column:1/-1;}
+  .save-status{font-size:12px;color:var(--ink-soft);}
+  .save-status.error{color:var(--overdue);}
+  @media(max-width:720px){.item-row,.date-periods{grid-template-columns:1fr;}.item-check{max-width:180px;}}
   .item-edit{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
   .item-edit input{width:56px;padding:6px;border:1px solid var(--line);font-size:12.5px;font-family:'IBM Plex Mono',monospace;}
   .item-edit button{padding:6px 10px;font-size:11.5px;background:var(--ink);color:#fff;border:none;}
@@ -236,6 +248,8 @@ let pkYear = 'all';
 let registryLoadError = false;
 let ordersPage=1;
 const pageSize=30;
+const itemDetailDrafts=new Map();
+const itemDetailsSaving=new Set();
 
 function fmtDate(iso){ if(!iso) return null; return new Date(iso).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 function fmtDateTime(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
@@ -402,6 +416,7 @@ function cssId(s){ return s.replace(/[^\w]/g,'_'); }
 
 function renderOrders(){
   const list = document.getElementById('orders-list');
+  const openIds=[...list.querySelectorAll('.order.open')].map(el=>el.id);
   const matched = filteredOrders();
   ordersPage=Math.max(1,Math.min(ordersPage,Math.ceil(matched.length/pageSize)||1));
   const filtered = matched.slice((ordersPage-1)*pageSize,ordersPage*pageSize);
@@ -442,11 +457,14 @@ function renderOrders(){
       </div>
     </div>`;
   }).join('');
+  openIds.forEach(id=>document.getElementById(id)?.classList.add('open'));
 }
 
 function renderItem(item, order, num){
   const st = itemStatus(item); const stale = isStale(item); const editable = canEdit(item, order);
-  const notes = item.execution_notes || '';
+  const draftKey=JSON.stringify([order.id,item.id]);
+  const details={...item,...itemDetailDrafts.get(draftKey)};
+  const notes = details.execution_notes || '';
   const isDone = item.progress >= 100;
   return `<div class="item">
     <div class="item-row">
@@ -465,19 +483,19 @@ function renderItem(item, order, num){
       </div>
       <div class="item-deadline">
         ${editable
-          ? `<div class="date-edit-row"><input type="date" value="${item.date_from||''}" id="datefrom-${item.id}" title="с"><input type="date" value="${item.deadline||''}" id="dateto-${item.id}" title="до"></div>`
-          : `${item.date_from ? 'с '+fmtDate(item.date_from)+' ' : ''}${item.deadline ? 'до '+fmtDate(item.deadline) : 'срок не указан'}`
+          ? `<div class="date-periods">${renderDatePeriod(order,item,details,'План','date_from','deadline','datefrom','dateto')}${renderDatePeriod(order,item,details,'Факт','actual_date_from','actual_deadline','actualfrom','actualto')}</div>`
+          : `<div class="date-periods"><div>План: ${fmtDate(item.date_from)||'—'} — ${fmtDate(item.deadline)||'—'}</div><div>Факт: ${fmtDate(item.actual_date_from)||'—'} — ${fmtDate(item.actual_deadline)||'—'}</div></div>`
         }
       </div>
       <div class="item-edit">
-        ${editable ? `<button onclick="saveDetails('${order.id}','${item.id}')">Сохранить</button>` : `<div class="locked-note">войдите, чтобы отмечать</div>`}
+        ${editable ? `<button id="save-details-${item.id}" onclick="saveDetails('${order.id}','${item.id}')">Сохранить</button><span class="save-status" role="status" id="save-status-${item.id}">${itemDetailDrafts.has(draftKey)?'Есть несохранённые изменения':''}</span>` : `<div class="locked-note">войдите, чтобы отмечать</div>`}
         ${isAdmin() ? `<button class="item-delete" title="Удалить пункт" onclick="deleteItem('${item.id}')">✕</button>` : ''}
       </div>
     </div>
     <div class="item-execution">
       <div class="item-execution-label">Исполнение (комментарий)</div>
       ${editable
-        ? `<textarea id="exec-${item.id}" placeholder="Опишите, что сделано: реквизиты решений, документов, ссылки...">${escHtml(notes)}</textarea>`
+        ? `<textarea id="exec-${item.id}" oninput="rememberItemDetail('${order.id}','${item.id}','execution_notes',this.value)" placeholder="Опишите, что сделано: реквизиты решений, документов, ссылки...">${escHtml(notes)}</textarea>`
         : `<div class="item-execution-readonly ${notes ? '' : 'empty'}">${notes ? escHtml(notes) : 'Комментарий не заполнен.'}</div>`
       }
     </div>
@@ -647,28 +665,55 @@ async function toggleDone(orderId, itemId){
   toggleOrder(orderId);
 }
 
-// Сохранение комментария "Исполнение" и дат — по кнопке «Сохранить»
+function renderDatePeriod(order,item,details,label,fromField,toField,fromId,toId){
+  return `<fieldset class="date-period"><legend>${label}</legend><div class="date-edit-row">${[[fromField,fromId,'Начало'],[toField,toId,'Окончание']].map(([field,prefix,title])=>`<label for="${prefix}-${item.id}">${title}<input type="date" id="${prefix}-${item.id}" aria-label="${label}: ${title.toLowerCase()}" value="${escAttr(details[field]||'')}" oninput="rememberItemDetail('${order.id}','${item.id}','${field}',this.value||null)"></label>`).join('')}</div></fieldset>`;
+}
+function rememberItemDetail(orderId,itemId,field,value){
+  const key=JSON.stringify([orderId,itemId]);
+  itemDetailDrafts.set(key,{...itemDetailDrafts.get(key),[field]:value});
+  setDetailsStatus(itemId,'Есть несохранённые изменения');
+}
+function setDetailsStatus(itemId,message,error=false){
+  const el=document.getElementById('save-status-'+itemId);
+  if(el){el.textContent=message;el.classList.toggle('error',error);}
+}
+// The returned record confirms that RLS allowed the update and all fields persisted.
 async function saveDetails(orderId, itemId){
-  const order = orders.find(o=>o.id===orderId);
-  const item = order.items.find(i=>i.id===itemId);
-  const notesInput = document.getElementById('exec-'+itemId);
-  const dateFromInput = document.getElementById('datefrom-'+itemId);
-  const dateToInput = document.getElementById('dateto-'+itemId);
-  const newNotes = notesInput ? notesInput.value : (item.execution_notes || '');
-  const oldNotes = item.execution_notes || '';
-  const newDateFrom = dateFromInput ? (dateFromInput.value || null) : (item.date_from || null);
-  const newDeadline = dateToInput ? (dateToInput.value || null) : item.deadline;
-  const oldDateFrom = item.date_from || null;
-  if(newNotes === oldNotes && newDateFrom === oldDateFrom && newDeadline === item.deadline) return;
-
-  const { error: updErr } = await sb.from('items').update({
-    execution_notes: newNotes, date_from: newDateFrom, deadline: newDeadline,
-    last_by: currentProfile.id, last_at: new Date().toISOString()
-  }).eq('id', itemId);
-  if(updErr){ alert('Не удалось сохранить: ' + updErr.message); return; }
-
-  await loadAll();
-  toggleOrder(orderId);
+  const key=JSON.stringify([orderId,itemId]);
+  if(itemDetailsSaving.has(key)) return;
+  const order=orders.find(o=>o.id===orderId);
+  const item=order?.items.find(i=>i.id===itemId);
+  if(!item||!currentProfile){setDetailsStatus(itemId,'Войдите снова и повторите сохранение.',true);return;}
+  const fields=[['execution_notes','exec'],['date_from','datefrom'],['deadline','dateto'],['actual_date_from','actualfrom'],['actual_deadline','actualto']];
+  const values={};
+  for(const [field,prefix] of fields){
+    const input=document.getElementById(prefix+'-'+itemId);
+    if(input&&!input.reportValidity()) return;
+    values[field]=input?(field==='execution_notes'?input.value:input.value||null):(item[field]??(field==='execution_notes'?'':null));
+  }
+  for(const [start,end,label] of [['date_from','deadline','План'],['actual_date_from','actual_deadline','Факт']]){
+    if(values[start]&&values[end]&&values[start]>values[end]){setDetailsStatus(itemId,label+': окончание раньше начала.',true);return;}
+  }
+  const patch=Object.fromEntries(Object.entries(values).filter(([field,value])=>value!==(item[field]??(field==='execution_notes'?'':null))));
+  if(!Object.keys(patch).length){itemDetailDrafts.delete(key);setDetailsStatus(itemId,'Изменений нет');return;}
+  itemDetailDrafts.set(key,values);
+  itemDetailsSaving.add(key);
+  const button=document.getElementById('save-details-'+itemId);
+  if(button){button.disabled=true;button.textContent='Сохранение…';}
+  setDetailsStatus(itemId,'Сохранение…');
+  try{
+    const {data,error}=await sb.from('items').update({...patch,last_by:currentProfile.id,last_at:new Date().toISOString()}).eq('id',itemId).eq('order_id',orderId).select('id,order_id,execution_notes,date_from,deadline,actual_date_from,actual_deadline,last_by,last_at').maybeSingle();
+    if(error) throw error;
+    if(!data) throw new Error('Запись не обновлена. Проверьте права на это поручение у администратора.');
+    if(Object.entries(patch).some(([field,value])=>(data[field]??null)!==value)) throw new Error('База вернула другие значения. Изменения оставлены в форме; повторите сохранение.');
+    Object.assign(item,data);
+    const remaining=Object.fromEntries(Object.entries(itemDetailDrafts.get(key)||{}).filter(([field,value])=>value!==(data[field]??(field==='execution_notes'?'':null))));
+    if(Object.keys(remaining).length) itemDetailDrafts.set(key,remaining); else itemDetailDrafts.delete(key);
+    renderOrders();
+    setDetailsStatus(itemId,Object.keys(remaining).length?'Сохранено. Есть новые несохранённые изменения.':'Сохранено');
+    renderStats();
+  }catch(error){setDetailsStatus(itemId,'Не сохранено: '+error.message,true);}
+  finally{itemDetailsSaving.delete(key);if(button){button.disabled=false;button.textContent='Сохранить';}}
 }
 
 function renderHistory(){
@@ -796,8 +841,10 @@ function openItemModal(orderId){
     <div class="modal-hint">Должен быть уникальным во всей базе.</div>
     <div class="field"><label>Текст пункта</label><input id="new-item-text"></div>
     <div class="field"><label>Ответственный (необязательно)</label><select id="new-item-resp"><option value="">— не назначен —</option>${options}</select></div>
-    <div class="field"><label>Дата начала (необязательно)</label><input id="new-item-datefrom" type="date"></div>
-    <div class="field"><label>Срок исполнения — до (необязательно)</label><input id="new-item-deadline" type="date"></div>
+    <div class="field"><label>Плановое начало (необязательно)</label><input id="new-item-datefrom" type="date"></div>
+    <div class="field"><label>Плановое окончание (необязательно)</label><input id="new-item-deadline" type="date"></div>
+    <div class="field"><label>Фактическое начало (необязательно)</label><input id="new-item-actualfrom" type="date"></div>
+    <div class="field"><label>Фактическое окончание (необязательно)</label><input id="new-item-actualto" type="date"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn-primary" style="width:auto" onclick="submitNewItem('${orderId}')">Добавить</button>
@@ -811,10 +858,13 @@ async function submitNewItem(orderId){
   const responsible = document.getElementById('new-item-resp').value || null;
   const date_from = document.getElementById('new-item-datefrom').value || null;
   const deadline = document.getElementById('new-item-deadline').value || null;
+  const actual_date_from = document.getElementById('new-item-actualfrom').value || null;
+  const actual_deadline = document.getElementById('new-item-actualto').value || null;
   const errEl = document.getElementById('item-modal-error');
   if(!id || !text){ errEl.textContent = 'Укажите код и текст пункта.'; return; }
+  if((date_from&&deadline&&date_from>deadline)||(actual_date_from&&actual_deadline&&actual_date_from>actual_deadline)){errEl.textContent='Окончание не может быть раньше начала.';return;}
   const { error } = await sb.from('items').insert({
-    id, order_id: orderId, text, deadline, date_from, responsible, progress: 0, execution_notes: '',
+    id, order_id: orderId, text, deadline, date_from, actual_date_from, actual_deadline, responsible, progress: 0, execution_notes: '',
     last_by: currentProfile.id, last_at: new Date().toISOString()
   });
   if(error){ errEl.textContent = 'Ошибка: ' + error.message; return; }
@@ -891,3 +941,4 @@ async function submitInvite(){
 </script>
 </body>
 </html>
+
