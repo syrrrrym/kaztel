@@ -1,6 +1,6 @@
 function hasActualDates(order, item) {
   const secondItems={'6-1/2026':'6-1-2','6-2/2026':'6-2-2','35-99/2026':'35-99-2'};
-  return (order.category || 'sd')==='sd' && !!item && secondItems[order.id]===item.id;
+  return (order.category || 'sd')==='sd' && !!item?.id && secondItems[order.id]===item.id;
 }
 function sourceField(order, name) { return order.source_data?.fields?.[name] ?? ''; }
 function statusLabel(status) {
