@@ -466,7 +466,7 @@ function renderItem(item, order, num){
   const details={...item,...itemDetailDrafts.get(draftKey)};
   const notes = details.execution_notes || '';
   const isDone = item.progress >= 100;
-  return `<div class="item${hasActualDates(order)?' item-double-dates':''}">
+  return `<div class="item${hasActualDates(order,item)?' item-double-dates':''}">
     <div class="item-row">
       <div>
         <div class="item-text"><span class="item-num">${num}.</span> ${escHtml(item.text)}</div>
@@ -664,11 +664,11 @@ async function toggleDone(orderId, itemId){
 
 function renderItemDates(order,item,details,editable){
   if(!editable){
-    return hasActualDates(order)
+    return hasActualDates(order,item)
       ? `<div class="date-periods"><div>План: ${fmtDate(item.date_from)||'—'} — ${fmtDate(item.deadline)||'—'}</div><div>Факт: ${fmtDate(item.actual_date_from)||'—'} — ${fmtDate(item.actual_deadline)||'—'}</div></div>`
       : `${item.date_from?'с '+fmtDate(item.date_from)+' ':''}${item.deadline?'до '+fmtDate(item.deadline):'срок не указан'}`;
   }
-  if(hasActualDates(order)) return `<div class="date-periods">${renderDatePeriod(order,item,details,'План','date_from','deadline','datefrom','dateto')}${renderDatePeriod(order,item,details,'Факт','actual_date_from','actual_deadline','actualfrom','actualto')}</div>`;
+  if(hasActualDates(order,item)) return `<div class="date-periods">${renderDatePeriod(order,item,details,'План','date_from','deadline','datefrom','dateto')}${renderDatePeriod(order,item,details,'Факт','actual_date_from','actual_deadline','actualfrom','actualto')}</div>`;
   return `<div class="date-edit-row"><input type="date" value="${escAttr(details.date_from||'')}" id="datefrom-${item.id}" title="с" aria-label="Начало" oninput="rememberItemDetail('${order.id}','${item.id}','date_from',this.value||null)"><input type="date" value="${escAttr(details.deadline||'')}" id="dateto-${item.id}" title="до" aria-label="Окончание" oninput="rememberItemDetail('${order.id}','${item.id}','deadline',this.value||null)"></div>`;
 }
 function renderDatePeriod(order,item,details,label,fromField,toField,fromId,toId){
@@ -691,7 +691,7 @@ async function saveDetails(orderId, itemId){
   const item=order?.items.find(i=>i.id===itemId);
   if(!item||!currentProfile){setDetailsStatus(itemId,'Войдите снова и повторите сохранение.',true);return;}
   const fields=[['execution_notes','exec'],['date_from','datefrom'],['deadline','dateto']];
-  if(hasActualDates(order)) fields.push(['actual_date_from','actualfrom'],['actual_deadline','actualto']);
+  if(hasActualDates(order,item)) fields.push(['actual_date_from','actualfrom'],['actual_deadline','actualto']);
   const values={};
   for(const [field,prefix] of fields){
     const input=document.getElementById(prefix+'-'+itemId);
@@ -850,7 +850,7 @@ function openItemModal(orderId){
     <div class="field"><label>Ответственный (необязательно)</label><select id="new-item-resp"><option value="">— не назначен —</option>${options}</select></div>
     <div class="field"><label>Плановое начало (необязательно)</label><input id="new-item-datefrom" type="date"></div>
     <div class="field"><label>Плановое окончание (необязательно)</label><input id="new-item-deadline" type="date"></div>
-    ${hasActualDates(order)?`<div class="field"><label>Фактическое начало (необязательно)</label><input id="new-item-actualfrom" type="date"></div><div class="field"><label>Фактическое окончание (необязательно)</label><input id="new-item-actualto" type="date"></div>`:''}
+    ${hasActualDates(order,{id:suggestedId})?`<div class="field"><label>Фактическое начало (необязательно)</label><input id="new-item-actualfrom" type="date"></div><div class="field"><label>Фактическое окончание (необязательно)</label><input id="new-item-actualto" type="date"></div>`:''}
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn-primary" style="width:auto" onclick="submitNewItem('${orderId}')">Добавить</button>
@@ -947,4 +947,5 @@ async function submitInvite(){
 </script>
 </body>
 </html>
+
 
