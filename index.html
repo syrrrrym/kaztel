@@ -665,10 +665,10 @@ async function toggleDone(orderId, itemId){
 function renderItemDates(order,item,details,editable){
   if(!editable){
     return hasActualDates(order,item)
-      ? `<div class="date-periods"><div>План: ${fmtDate(item.date_from)||'—'} — ${fmtDate(item.deadline)||'—'}</div><div>Факт: ${fmtDate(item.actual_date_from)||'—'} — ${fmtDate(item.actual_deadline)||'—'}</div></div>`
+      ? `<div class="date-periods"><div>Дата 1: ${fmtDate(item.date_from)||'—'} — ${fmtDate(item.deadline)||'—'}</div><div>Дата 2: ${fmtDate(item.actual_date_from)||'—'} — ${fmtDate(item.actual_deadline)||'—'}</div></div>`
       : `${item.date_from?'с '+fmtDate(item.date_from)+' ':''}${item.deadline?'до '+fmtDate(item.deadline):'срок не указан'}`;
   }
-  if(hasActualDates(order,item)) return `<div class="date-periods">${renderDatePeriod(order,item,details,'План','date_from','deadline','datefrom','dateto')}${renderDatePeriod(order,item,details,'Факт','actual_date_from','actual_deadline','actualfrom','actualto')}</div>`;
+  if(hasActualDates(order,item)) return `<div class="date-periods">${renderDatePeriod(order,item,details,'Дата 1','date_from','deadline','datefrom','dateto')}${renderDatePeriod(order,item,details,'Дата 2','actual_date_from','actual_deadline','actualfrom','actualto')}</div>`;
   return `<div class="date-edit-row"><input type="date" value="${escAttr(details.date_from||'')}" id="datefrom-${item.id}" title="с" aria-label="Начало" oninput="rememberItemDetail('${order.id}','${item.id}','date_from',this.value||null)"><input type="date" value="${escAttr(details.deadline||'')}" id="dateto-${item.id}" title="до" aria-label="Окончание" oninput="rememberItemDetail('${order.id}','${item.id}','deadline',this.value||null)"></div>`;
 }
 function renderDatePeriod(order,item,details,label,fromField,toField,fromId,toId){
@@ -698,7 +698,7 @@ async function saveDetails(orderId, itemId){
     if(input&&!input.reportValidity()) return;
     values[field]=input?(field==='execution_notes'?input.value:input.value||null):(item[field]??(field==='execution_notes'?'':null));
   }
-  for(const [start,end,label] of [['date_from','deadline','План'],['actual_date_from','actual_deadline','Факт']]){
+  for(const [start,end,label] of [['date_from','deadline','Дата 1'],['actual_date_from','actual_deadline','Дата 2']]){
     if(values[start]&&values[end]&&values[start]>values[end]){setDetailsStatus(itemId,label+': окончание раньше начала.',true);return;}
   }
   const patch=Object.fromEntries(Object.entries(values).filter(([field,value])=>value!==(item[field]??(field==='execution_notes'?'':null))));
@@ -848,9 +848,9 @@ function openItemModal(orderId){
     <div class="modal-hint">Должен быть уникальным во всей базе.</div>
     <div class="field"><label>Текст пункта</label><input id="new-item-text"></div>
     <div class="field"><label>Ответственный (необязательно)</label><select id="new-item-resp"><option value="">— не назначен —</option>${options}</select></div>
-    <div class="field"><label>Плановое начало (необязательно)</label><input id="new-item-datefrom" type="date"></div>
-    <div class="field"><label>Плановое окончание (необязательно)</label><input id="new-item-deadline" type="date"></div>
-    ${hasActualDates(order,{id:suggestedId})?`<div class="field"><label>Фактическое начало (необязательно)</label><input id="new-item-actualfrom" type="date"></div><div class="field"><label>Фактическое окончание (необязательно)</label><input id="new-item-actualto" type="date"></div>`:''}
+    <div class="field"><label>Дата 1: начало (необязательно)</label><input id="new-item-datefrom" type="date"></div>
+    <div class="field"><label>Дата 1: окончание (необязательно)</label><input id="new-item-deadline" type="date"></div>
+    ${hasActualDates(order,{id:suggestedId})?`<div class="field"><label>Дата 2: начало (необязательно)</label><input id="new-item-actualfrom" type="date"></div><div class="field"><label>Дата 2: окончание (необязательно)</label><input id="new-item-actualto" type="date"></div>`:''}
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn-primary" style="width:auto" onclick="submitNewItem('${orderId}')">Добавить</button>
