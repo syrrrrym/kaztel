@@ -64,6 +64,8 @@ function exportRows(selected) {
       'Исполнение, %':item?.progress ?? null,
       'Начало пункта (актуальное)':excelDate(item?.date_from),
       'Срок пункта (актуальный)':excelDate(item?.deadline),
+      'Фактическое начало пункта':excelDate(item?.actual_date_from),
+      'Фактическое окончание пункта':excelDate(item?.actual_deadline),
       'Комментарий (актуальный)':item?.execution_notes || '',
       'Последнее изменение':item?.last_at ? new Date(item.last_at) : null,
       'Изменил':item?.last_by ? userName(item.last_by) : '',
@@ -115,3 +117,4 @@ async function exportOrders() {
   } catch(error) { alert('Не удалось выгрузить Excel: '+error.message); }
   finally {button.disabled=false;button.textContent='Скачать Excel';}
 }
+
