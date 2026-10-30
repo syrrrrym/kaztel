@@ -1,5 +1,6 @@
-function hasActualDates(order) {
-  return (order.category || 'sd')==='sd' && ['6-2/2026','6-1/2026','35-99/2026'].includes(order.id);
+function hasActualDates(order, item) {
+  const secondItems={'6-1/2026':'6-1-2','6-2/2026':'6-2-2','35-99/2026':'35-99-2'};
+  return (order.category || 'sd')==='sd' && !!item && secondItems[order.id]===item.id;
 }
 function sourceField(order, name) { return order.source_data?.fields?.[name] ?? ''; }
 function statusLabel(status) {
@@ -67,7 +68,7 @@ function exportRows(selected) {
       'Исполнение, %':item?.progress ?? null,
       'Начало пункта (актуальное)':excelDate(item?.date_from),
       'Срок пункта (актуальный)':excelDate(item?.deadline),
-      ...(hasActualDates(order) ? {
+      ...(hasActualDates(order,item) ? {
         'Фактическое начало пункта':excelDate(item?.actual_date_from),
         'Фактическое окончание пункта':excelDate(item?.actual_deadline)
       } : {}),
@@ -122,5 +123,6 @@ async function exportOrders() {
   } catch(error) { alert('Не удалось выгрузить Excel: '+error.message); }
   finally {button.disabled=false;button.textContent='Скачать Excel';}
 }
+
 
 
